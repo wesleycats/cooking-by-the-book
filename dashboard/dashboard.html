@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>Proefkeuken · Cooking by the Book</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Testoverzicht voor Wes. Leest de Google Sheet via het Apps Script (doGet met sleutel).
+   Kleuren: dezelfde tokens als de app (basilicum), licht en donker. */
+:root{--bg:#f6f8f4;--surface:#fff;--sunk:#ecf1e8;--line:#d9e1d3;--fg:#1c2419;--muted:#5d6b57;--accent:#2f6b3a;--accent-fg:#fff;--accent-soft:#dcebd8;--pop:#b7790a;--pop-soft:#fbefd2;--danger:#b3361f;--danger-soft:#f8e1dc;--good:#2f6b3a;
+  --f-display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;--f-body:"Figtree",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--f-mono:"DM Mono",ui-monospace,Menlo,monospace;--r:14px;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121711;--surface:#1a2119;--sunk:#222b20;--line:#2f3a2c;--fg:#e8eee4;--muted:#9aab93;--accent:#7fc489;--accent-fg:#0f1a10;--accent-soft:#24402a;--pop:#f2b63b;--pop-soft:#3a2f14;--danger:#ef7a62;--danger-soft:#3d1f18;--good:#7fc489;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121711;--surface:#1a2119;--sunk:#222b20;--line:#2f3a2c;--fg:#e8eee4;--muted:#9aab93;--accent:#7fc489;--accent-fg:#0f1a10;--accent-soft:#24402a;--pop:#f2b63b;--pop-soft:#3a2f14;--danger:#ef7a62;--danger-soft:#3d1f18;--good:#7fc489;color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--f-body);-webkit-font-smoothing:antialiased;padding-bottom:env(safe-area-inset-bottom)}
+button,input,select{font:inherit;color:inherit}
+h1,h2,h3{font-family:var(--f-display);line-height:1.15;margin:0;text-wrap:balance}
+.wrap{max-width:980px;margin:0 auto;padding:0 16px}
+:focus-visible{outline:2.5px solid var(--pop);outline-offset:2px;border-radius:6px}
+
+/* kop + tabs */
+.top{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top)}
+.top .row{display:flex;align-items:center;gap:10px;min-height:54px}
+.brand{font-family:var(--f-display);font-weight:800;font-size:1.1rem;letter-spacing:-.01em}
+.brand small{display:block;font:500 .72rem var(--f-mono);color:var(--muted);letter-spacing:.02em}
+.spacer{flex:1}
+.upd{font-size:.76rem;color:var(--muted);text-align:right}
+.iconbtn{width:38px;height:38px;border-radius:999px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer}
+.iconbtn svg{width:18px;height:18px}
+.iconbtn.spin svg{animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 16px 8px}
+.tabs::-webkit-scrollbar{display:none}
+.tab{border:0;background:none;padding:7px 12px;border-radius:999px;font-weight:600;font-size:.9rem;color:var(--muted);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.tab[aria-selected="true"]{background:var(--fg);color:var(--bg)}
+.tab .n{font:500 .72rem var(--f-mono);background:var(--danger);color:#fff;border-radius:999px;padding:1px 6px}
+
+main{padding:16px 0 40px}
+section.pane{display:grid;gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.card h2{font-size:1.05rem;margin-bottom:10px}
+.sub{color:var(--muted);font-size:.84rem;margin:0}
+.muted{color:var(--muted)}
+.mono{font-family:var(--f-mono);font-size:.8rem}
+.grid2{display:grid;gap:16px}
+@media (min-width:760px){.grid2{grid-template-columns:1fr 1fr}}
+
+/* kerncijfers */
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:760px){.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;min-width:0}
+.kpi b{display:block;font:800 1.9rem/1.1 var(--f-display);letter-spacing:-.02em}
+.kpi span{font-size:.8rem;color:var(--muted);display:block}
+.kpi .lbl{font-size:.82rem;font-weight:600;color:var(--fg)}
+.kpi.alert{border-color:var(--danger);background:var(--danger-soft)}
+.kpi.alert b{color:var(--danger)}
+
+/* staafdiagram activiteit per dag */
+.bars{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:2px;align-items:end;height:120px;padding-top:18px;position:relative}
+.bars .b{position:relative;height:100%;display:flex;align-items:flex-end;cursor:default}
+.bars .b i{display:block;width:100%;background:var(--accent);border-radius:4px 4px 0 0;min-height:0}
+.bars .b.zero i{background:var(--line);height:2px!important;border-radius:1px}
+.bars .b:hover i,.bars .b.on i{filter:brightness(1.15)}
+.axis{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:2px;font:500 .66rem var(--f-mono);color:var(--muted);margin-top:4px;border-top:1px solid var(--line);padding-top:4px}
+.axis span{text-align:center;white-space:nowrap;overflow:hidden}
+.tip{position:absolute;pointer-events:none;background:var(--fg);color:var(--bg);font-size:.78rem;padding:5px 8px;border-radius:8px;white-space:nowrap;transform:translate(-50%,-100%);z-index:5}
+
+/* lijst met aandachtspunten */
+.attn{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.attn li{display:flex;gap:10px;align-items:flex-start;font-size:.9rem}
+.attn .ic{flex:none;width:22px;height:22px;border-radius:999px;display:grid;place-items:center;font-size:.75rem;background:var(--pop-soft);color:var(--pop)}
+.attn .ic.bad{background:var(--danger-soft);color:var(--danger)}
+.attn .ic.ok{background:var(--accent-soft);color:var(--accent)}
+
+/* testers */
+.testers{display:grid;gap:10px}
+@media (min-width:760px){.testers{grid-template-columns:1fr 1fr}}
+.tester{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:grid;gap:10px;cursor:pointer;text-align:left;width:100%}
+.tester:hover{border-color:var(--accent)}
+.th{display:flex;align-items:center;gap:10px}
+.av{flex:none;width:38px;height:38px;border-radius:999px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font:800 1rem var(--f-display)}
+.th .nm{font-weight:700;line-height:1.2}
+.th .nm small{display:block;font:500 .72rem var(--f-mono);color:var(--muted)}
+.chip{display:inline-block;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--sunk);color:var(--muted);white-space:nowrap}
+.chip.bad{background:var(--danger-soft);color:var(--danger)}
+.chip.warn{background:var(--pop-soft);color:var(--pop)}
+.chip.ok{background:var(--accent-soft);color:var(--accent)}
+.strip{display:grid;grid-template-columns:repeat(14,1fr);gap:3px}
+.strip i{height:14px;border-radius:3px;background:var(--sunk)}
+.strip i.on{background:var(--accent)}
+.strip i.today{outline:1.5px solid var(--muted);outline-offset:1px}
+.strip-lbl{display:flex;justify-content:space-between;font:500 .66rem var(--f-mono);color:var(--muted);margin-top:-6px}
+.nums{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.84rem;color:var(--muted)}
+.nums b{color:var(--fg);font-weight:700}
+
+/* trechter per recept */
+.funnel{display:grid;gap:5px;margin-top:6px}
+.fr{display:grid;grid-template-columns:minmax(0,9.5em) 1fr 2.2em;gap:8px;align-items:center;font-size:.82rem}
+.fr .l{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.fr .t{height:16px;background:var(--sunk);border-radius:4px;overflow:hidden}
+.fr .t i{display:block;height:100%;background:var(--accent);border-radius:0 4px 4px 0}
+.fr .v{font:500 .78rem var(--f-mono);text-align:right}
+.fr.drop .l{color:var(--danger);font-weight:600}
+.fr.drop .v{color:var(--danger)}
+.stats3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.stats3 div{background:var(--sunk);border-radius:10px;padding:8px 10px}
+.stats3 b{display:block;font:800 1.15rem var(--f-display)}
+.stats3 span{font-size:.74rem;color:var(--muted)}
+.notes{margin:8px 0 0;padding:0;list-style:none;display:grid;gap:6px;font-size:.86rem}
+.notes li{border-left:3px solid var(--line);padding-left:10px}
+.notes small{color:var(--muted)}
+
+/* feedback */
+.filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.f{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px;font-size:.84rem;font-weight:600;cursor:pointer}
+.f[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.f small{font:500 .72rem var(--f-mono);opacity:.75;margin-left:3px}
+select.f{appearance:none;padding-right:26px;background:var(--surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%235d6b57" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>') no-repeat right 8px center/14px}
+.feed{display:grid;gap:10px}
+.item{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:grid;gap:6px}
+.item.bug{border-left:4px solid var(--danger)}
+.item.done{opacity:.6}
+.ih{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.82rem}
+.ih .who{font-weight:700}
+.ih .when{color:var(--muted);margin-left:auto}
+.msg{font-size:.95rem;white-space:pre-wrap;overflow-wrap:anywhere}
+.where{font-size:.78rem;color:var(--muted)}
+details.stack summary{font-size:.78rem;color:var(--muted);cursor:pointer}
+details.stack pre{font:500 .72rem/1.5 var(--f-mono);white-space:pre-wrap;overflow-wrap:anywhere;background:var(--sunk);padding:8px;border-radius:8px;margin:6px 0 0}
+.ia{display:flex;gap:6px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;font-weight:600;font-size:.86rem;cursor:pointer;white-space:nowrap}
+.btn.sm{padding:4px 10px;font-size:.78rem}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.btn:active{transform:scale(.97)}
+.empty{text-align:center;color:var(--muted);padding:28px 12px;font-size:.9rem}
+
+/* tester-detail */
+.back{display:inline-flex;align-items:center;gap:4px;border:0;background:none;color:var(--muted);font-weight:600;padding:0;cursor:pointer}
+.tl{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.tl .day{font:600 .78rem var(--f-mono);color:var(--muted);margin:10px 0 4px}
+.tl li.e{display:grid;grid-template-columns:3.2em 1fr;gap:8px;font-size:.86rem;padding:3px 0;border-bottom:1px dashed var(--line)}
+.tl li.e time{font:500 .76rem var(--f-mono);color:var(--muted)}
+.tl li.e.bad{color:var(--danger)}
+
+/* uitnodigen */
+.inv{display:grid;gap:16px;align-items:start}
+@media (min-width:760px){.inv{grid-template-columns:1fr 280px}}
+.qr{background:#fff;border-radius:16px;padding:16px;display:grid;place-items:center;border:1px solid var(--line)}
+.qr svg{width:100%;max-width:240px;height:auto;display:block}
+.qr p{margin:10px 0 0;color:#1c2419;font:700 .95rem var(--f-display);text-align:center}
+.qr p small{display:block;font:500 .72rem var(--f-mono);color:#5d6b57}
+.field{display:grid;gap:4px}
+.field label{font-weight:600;font-size:.86rem}
+.field input{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:1rem;width:100%}
+.link{font:500 .82rem var(--f-mono);background:var(--sunk);border-radius:10px;padding:10px 12px;overflow-wrap:anywhere}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:.88rem;font-weight:600;z-index:40;max-width:92vw}
+.demo-banner{background:var(--pop-soft);color:var(--fg);border-radius:10px;padding:8px 12px;font-size:.84rem}
+table.tbl{width:100%;border-collapse:collapse;font-size:.84rem}
+table.tbl th{text-align:left;font-weight:600;color:var(--muted);border-bottom:1px solid var(--line);padding:4px 6px}
+table.tbl td{border-bottom:1px solid var(--line);padding:5px 6px}
+table.tbl td.n{text-align:right;font-family:var(--f-mono)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="row">
+      <div class="brand">Proefkeuken<small>Testoverzicht · alpha</small></div>
+      <span class="spacer"></span>
+      <div class="upd" id="upd"></div>
+      <button class="iconbtn" id="reload" type="button" aria-label="Vernieuwen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+    </div>
+    <nav class="tabs" role="tablist" id="tabs"></nav>
+  </div>
+</header>
+<main class="wrap" id="main"><p class="empty">Laden…</p></main>
+<div class="toast" id="toast" hidden></div>
+<script src="vendor/qrcode.js"></script>
+<script>
+(() => {
+'use strict';
+/* ---------- instellingen: sleutel + web-app-URL uit de link (#k=…&u=…), daarna lokaal bewaard ---------- */
+const LS = 'cbtb-dash';
+const lsGet = () => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch(e) { return {}; } };
+const lsSet = v => { try { localStorage.setItem(LS, JSON.stringify({ ...lsGet(), ...v })); } catch(e) {} };
+const hp = new URLSearchParams(location.hash.slice(1));
+if (hp.get('k') && hp.get('u')) { lsSet({ key: hp.get('k'), url: hp.get('u') }); }
+const DEMO = new URLSearchParams(location.search).has('demo');
+let tab = hp.get('tab') || lsGet().tab || 'overzicht';
+try { history.replaceState(null, '', location.pathname + location.search + '#tab=' + tab); } catch(e) {}   // sleutel uit de adresbalk
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
+const toast = m => { const t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2200); };
+const DAY = 864e5;
+const dayKey = d => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; };
+const ago = iso => { if (!iso) return '–'; const s = (Date.now() - Date.parse(iso)) / 1000; if (s < 60) return 'net'; if (s < 3600) return Math.floor(s/60) + ' min geleden'; if (s < 86400) return Math.floor(s/3600) + ' uur geleden'; const d = Math.floor(s/86400); return d === 1 ? 'gisteren' : d + ' dagen geleden'; };
+const fmtTime = iso => new Date(iso).toLocaleTimeString('nl-NL', { hour:'2-digit', minute:'2-digit' });
+const fmtDay = iso => new Date(iso).toLocaleDateString('nl-NL', { weekday:'short', day:'numeric', month:'short' });
+const initial = n => (n || '?').trim().charAt(0).toUpperCase();
+const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+const nl1 = x => x == null ? '–' : x.toFixed(1).replace('.', ',');
+
+let data = null, recipes = [], view = { tester: null, ff: 'open', ft: '' }, loading = false;
+
+/* ---------- gegevens ophalen ---------- */
+async function load(){
+  if (loading) return; loading = true; $('reload').classList.add('spin');
+  try {
+    if (!recipes.length) recipes = await fetch('recipes.json', { cache:'no-store' }).then(r => r.ok ? r.json() : []).then(j => j.recipes || j).catch(() => []);
+    if (DEMO) data = demoData();
+    else {
+      const { key, url } = lsGet();
+      if (!key || !url) { data = null; renderSetup(); return; }
+      const j = await fetch(url + '?key=' + encodeURIComponent(key), { cache:'no-store' }).then(r => r.json());
+      if (j.error) { renderSetup(j.error); return; }
+      data = j;
+    }
+    render();
+  } catch(e) { $('upd').textContent = 'Ophalen mislukt'; if (!data) renderSetup('Kon de gegevens niet ophalen. Klopt de web-app-URL en staat Toegang op "Iedereen"?'); }
+  finally { loading = false; $('reload').classList.remove('spin'); }
+}
+$('reload').onclick = load;
+setInterval(() => { if (document.visibilityState === 'visible') load(); }, 60000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && data && Date.now() - Date.parse(data.generated) > 60000) load(); });
+
+/* ---------- afgeleide cijfers ---------- */
+function derive(){
+  const ev = data.events || [], ts = data.testers || [], fb = data.feedback || [], er = data.fouten || [], ss = data.sessies || [];
+  const byT = Object.fromEntries(ts.map(t => [t.id, { ...t, days: new Set(String(t.dayList || '').split(',').filter(Boolean)), started: 0, finished: 0, fb: 0, bugs: 0, stars: [] }]));
+  for (const e of ev) { const t = byT[e.tid]; if (!t) continue; t.days.add(dayKey(e.at)); if (e.kind === 'kook_start') t.started++; }
+  for (const s of ss) { const t = byT[s.tid]; if (!t) continue; t.finished++; if (s.rating !== '' && s.rating != null) t.stars.push(+s.rating); }
+  for (const f of fb) { const t = byT[f.tid]; if (t) { t.fb++; if (f.type === 'Werkt niet') t.bugs++; } }
+  for (const f of er) { const t = byT[f.tid]; if (t) t.bugs++; }
+  const items = [
+    ...fb.map(f => ({ ...f, tab: 'Feedback', id: f.fid, bug: f.type === 'Werkt niet' })),
+    ...er.map(f => ({ ...f, tab: 'Fouten', id: f.eid, type: 'Fout', bug: true }))
+  ].sort((a, b) => b.at.localeCompare(a.at));
+  return { ev, ss, testers: Object.values(byT).sort((a, b) => String(b.last).localeCompare(String(a.last))), items, byT };
+}
+
+/* ---------- opbouw ---------- */
+const TABS = [['overzicht', 'Overzicht'], ['testers', 'Testers'], ['recepten', 'Recepten'], ['feedback', 'Feedback'], ['uitnodigen', 'Uitnodigen']];
+function renderTabs(openBugs){
+  $('tabs').innerHTML = TABS.map(([k, l]) => `<button class="tab" role="tab" type="button" data-tab="${k}" aria-selected="${k === tab}">${l}${k === 'feedback' && openBugs ? `<span class="n" aria-label="${openBugs} open bugs">${openBugs}</span>` : ''}</button>`).join('');
+  $('tabs').querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; view.tester = null; lsSet({ tab }); try { history.replaceState(null, '', '#tab=' + tab); } catch(e) {} render(); window.scrollTo(0, 0); });
+}
+function render(){
+  const d = derive();
+  const openBugs = d.items.filter(i => i.bug && i.status !== 'opgelost').length;
+  renderTabs(openBugs);
+  $('upd').innerHTML = DEMO ? 'voorbeelddata' : 'bijgewerkt<br>' + fmtTime(data.generated);
+  const m = $('main');
+  const banner = DEMO ? '<p class="demo-banner">Je kijkt naar <b>voorbeelddata</b>. Open het dashboard via de link in je Sheet (tabblad Instellingen) voor je echte testers.</p>' : '';
+  m.innerHTML = banner + ({ overzicht, testers: testersPane, recepten, feedback: feedbackPane, uitnodigen }[tab] || overzicht)(d);
+  bind(d);
+}
+
+/* Overzicht: vier kerncijfers, actieve testers per dag, aandachtspunten, nieuwste meldingen */
+function overzicht(d){
+  const now = Date.now(), active7 = d.testers.filter(t => t.last && now - Date.parse(t.last) < 7 * DAY).length;
+  const started = d.ev.filter(e => e.kind === 'kook_start').length, done = d.ss.length;
+  const stars = d.ss.map(s => s.rating).filter(x => x !== '' && x != null).map(Number);
+  const openBugs = d.items.filter(i => i.bug && i.status !== 'opgelost').length;
+  const days = [...Array(14)].map((_, k) => dayKey(now - (13 - k) * DAY));
+  const perDay = days.map(k => d.testers.filter(t => t.days.has(k)).length), max = Math.max(1, ...perDay);
+  const attn = attention(d);
+  return `<section class="pane">
+    <div class="kpis">
+      <div class="kpi"><span class="lbl">Testers</span><b>${d.testers.length}</b><span>${active7} actief deze week</span></div>
+      <div class="kpi"><span class="lbl">Keer gekookt</span><b>${done}</b><span>${started} keer gestart</span></div>
+      <div class="kpi"><span class="lbl">Gem. sterren</span><b>${nl1(avg(stars))}</b><span>${stars.length} beoordelingen</span></div>
+      <div class="kpi ${openBugs ? 'alert' : ''}"><span class="lbl">${openBugs ? '⚠ ' : ''}Open bugs</span><b>${openBugs}</b><span>${openBugs ? 'tik op Feedback' : 'niets open'}</span></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h2>Actieve testers per dag</h2><p class="sub">Laatste 14 dagen · tik op een staaf</p>
+        <div class="bars" id="bars">${perDay.map((v, k) => `<div class="b ${v ? '' : 'zero'}" data-tip="${esc(fmtDay(days[k]))}: ${v} ${v === 1 ? 'tester' : 'testers'}"><i style="height:${(v / max * 100).toFixed(1)}%"></i></div>`).join('')}</div>
+        <div class="axis">${days.map((k, i) => `<span>${i % 2 ? '' : +k.slice(8)}</span>`).join('')}</div>
+      </div>
+      <div class="card"><h2>Let op</h2>${attn.length ? `<ul class="attn">${attn.join('')}</ul>` : '<p class="sub">Niets bijzonders. Alles loopt.</p>'}</div>
+    </div>
+    <div class="card"><h2>Nieuwste meldingen</h2>${d.items.length ? `<div class="feed">${d.items.slice(0, 3).map(itemHtml).join('')}</div><p style="margin:10px 0 0"><button class="btn sm" type="button" data-go="feedback">Alle feedback</button></p>` : '<p class="sub">Nog geen feedback.</p>'}</div>
+  </section>`;
+}
+function attention(d){
+  const out = [], now = Date.now();
+  const li = (cls, ic, html) => `<li><span class="ic ${cls}" aria-hidden="true">${ic}</span><span>${html}</span></li>`;
+  const bugs = d.items.filter(i => i.bug && i.status !== 'opgelost');
+  if (bugs.length) out.push(li('bad', '!', `<b>${bugs.length} open ${bugs.length === 1 ? 'bug' : 'bugs'}</b>, nieuwste van ${esc(bugs[0].name)} (${ago(bugs[0].at)})`));
+  for (const t of d.testers) { const s = t.last ? (now - Date.parse(t.last)) / DAY : 99; if (s >= 3) out.push(li('', '…', `<b>${esc(t.name)}</b> is ${Math.floor(s)} dagen niet geweest`)); }
+  for (const r of recipes) {
+    const f = funnel(d, r); if (!f.started) continue;
+    const drop = f.rows.reduce((best, row, k) => k && f.rows[k-1].v - row.v > (best?.lost || 0) ? { lost: f.rows[k-1].v - row.v, at: row.l } : best, null);
+    if (drop && drop.lost) out.push(li('', '↘', `<b>${esc(short(r.title))}</b>: ${drop.lost} ${drop.lost === 1 ? 'tester haakt' : 'testers haken'} af bij “${esc(drop.at)}”`));
+  }
+  const fresh = d.testers.filter(t => t.first && now - Date.parse(t.first) < 2 * DAY);
+  if (fresh.length) out.push(li('ok', '+', `Nieuw: ${fresh.map(t => esc(t.name)).join(', ')}`));
+  return out.slice(0, 6);
+}
+
+/* Testers: kaart per tester met 14-dagenstrook; tik voor de tijdlijn */
+function testersPane(d){
+  if (view.tester) return testerDetail(d, d.byT[view.tester]);
+  if (!d.testers.length) return `<div class="card empty">Nog geen testers. Ga naar <b>Uitnodigen</b> en deel je link of QR-code.</div>`;
+  const days = [...Array(14)].map((_, k) => dayKey(Date.now() - (13 - k) * DAY));
+  return `<section class="pane"><div class="testers">${d.testers.map(t => {
+    const st = avg(t.stars), quiet = t.last ? (Date.now() - Date.parse(t.last)) / DAY : 99;
+    return `<button class="tester" type="button" data-tester="${esc(t.id)}">
+      <div class="th"><span class="av">${esc(initial(t.name))}</span><span class="nm">${esc(t.name)}<small>${esc(t.id)}</small></span><span class="spacer"></span>${t.group ? `<span class="chip">${esc(t.group)}</span>` : ''}</div>
+      <div class="strip" aria-label="Actief op ${t.days.size} dagen">${days.map((k, i) => `<i class="${t.days.has(k) ? 'on' : ''} ${i === 13 ? 'today' : ''}" title="${esc(fmtDay(k))}"></i>`).join('')}</div>
+      <div class="strip-lbl"><span>14 dagen geleden</span><span>vandaag</span></div>
+      <div class="nums"><span><b>${t.days.size}</b> actieve dagen</span><span><b>${t.finished}</b>/${t.started} keer klaar</span><span><b>${nl1(st)}</b> ★</span><span><b>${t.fb}</b> feedback</span>${t.bugs ? `<span class="chip bad">⚠ ${t.bugs} bug${t.bugs === 1 ? '' : 's'}</span>` : ''}</div>
+      <div class="nums"><span>Laatst: <b>${ago(t.last)}</b></span>${quiet >= 3 ? '<span class="chip warn">stil</span>' : ''}</div>
+    </button>`; }).join('')}</div></section>`;
+}
+const KIND = { open:'App geopend', pagina:'Pagina', aanmelding:'Aangemeld', kook_start:'Kookmodus gestart', kook_dicht:'Kookmodus gesloten', klaar:'Klaar met koken' };
+function stepLabel(r, i, n){ if (i === -2) return 'vragen vooraf'; if (i === -1) return 'klaarzetten'; if (i >= n) return 'eindscherm'; return `stap ${i+1}${r?.steps?.[i]?.title ? ' · ' + r.steps[i].title : ''}`; }
+function testerDetail(d, t){
+  if (!t) { view.tester = null; return testersPane(d); }
+  const rec = id => recipes.find(r => r.id === id);
+  const rows = [
+    ...d.ev.filter(e => e.tid === t.id).map(e => {
+      const r = rec(e.rid), name = r ? short(r.title) : '';
+      let txt = e.kind === 'stap' ? `${name}: ${stepLabel(r, +e.step, r?.steps?.length || 99)}` : e.kind === 'pagina' ? (e.screen === 'receptpagina' && name ? `Bekijkt ${name}` : `Opent ${e.screen}`) : (KIND[e.kind] || e.kind) + (name && e.kind !== 'open' ? ` · ${name}` : '');
+      return { at: e.at, txt: esc(txt) };
+    }),
+    ...d.items.filter(i => i.tid === t.id).map(i => ({ at: i.at, bad: i.bug, txt: `<b>${esc(i.type)}</b>: ${esc(i.message)}` })),
+    ...d.ss.filter(s => s.tid === t.id && s.rating !== '').map(s => ({ at: s.updated, txt: `★ ${esc(s.rating)} voor ${esc(short(s.title))}${s.chips ? ' · ' + esc(s.chips) : ''}${s.note ? ' · “' + esc(s.note) + '”' : ''}` }))
+  ].filter(x => x.at).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 300);
+  let lastDay = '';
+  return `<section class="pane">
+    <button class="back" type="button" id="back">← Alle testers</button>
+    <div class="card"><div class="th"><span class="av">${esc(initial(t.name))}</span><span class="nm">${esc(t.name)}<small>${esc(t.id)}${t.group ? ' · ' + esc(t.group) : ''}</small></span></div>
+      <div class="stats3"><div><b>${t.days.size}</b><span>actieve dagen</span></div><div><b>${t.finished}</b><span>keer gekookt</span></div><div><b>${nl1(avg(t.stars))}</b><span>gem. sterren</span></div></div>
+      <p class="sub">Eerste keer ${t.first ? fmtDay(t.first) : '–'} · laatst ${ago(t.last)} · ${esc(t.size || '')} · ${esc(String(t.device || '').replace(/\(KHTML.*$/, '').slice(0, 70))}</p>
+      <p style="margin:10px 0 0"><button class="btn sm" type="button" id="t-feed">Feedback van ${esc(t.name)}</button></p></div>
+    <div class="card"><h2>Tijdlijn</h2>${rows.length ? `<ul class="tl">${rows.map(x => { const dk = fmtDay(x.at), head = dk !== lastDay ? `<li class="day">${dk}</li>` : ''; lastDay = dk; return head + `<li class="e ${x.bad ? 'bad' : ''}"><time>${fmtTime(x.at)}</time><span>${x.txt}</span></li>`; }).join('')}</ul>` : '<p class="sub">Nog niets gedaan.</p>'}</div>
+  </section>`;
+}
+
+/* Recepten: trechter (hoeveel testers bereiken elk scherm) + kooktijd, sterren, chips en notities */
+const short = t => String(t || '').replace(/ met .*$/, '');
+function funnel(d, r){
+  const n = (r.steps || []).length, reached = new Map();
+  const add = (k, tid) => { if (!reached.has(k)) reached.set(k, new Set()); reached.get(k).add(tid); };
+  for (const e of d.ev) if (e.rid === r.id) {
+    if (e.kind === 'pagina' && e.screen === 'receptpagina') add('view', e.tid);
+    if (e.kind === 'kook_start') add('start', e.tid);
+    if (e.kind === 'stap') { const i = +e.step; add(i >= n ? 'end' : i < 0 ? 'prep' : 's' + i, e.tid); }
+  }
+  for (const s of d.ss) if (s.rid === r.id) add('end', s.tid);
+  // wie een latere stap haalde, heeft de eerdere ook gehad (kan stappen overslaan of halverwege instappen)
+  const order = ['view', 'start', ...[...Array(n)].map((_, i) => 's' + i), 'end'];
+  for (let k = order.length - 2; k >= 0; k--) for (const tid of reached.get(order[k + 1]) || []) add(order[k], tid);
+  const v = k => reached.get(k)?.size || 0;
+  const rows = [{ l: 'Recept bekeken', v: v('view') }, { l: 'Kookmodus gestart', v: v('start') }, ...(r.steps || []).map((s, i) => ({ l: `${i+1}. ${s.title || 'Stap'}`, v: v('s' + i) })), { l: 'Eindscherm', v: v('end') }];
+  return { rows, started: v('start'), viewed: v('view') };
+}
+function recepten(d){
+  if (!recipes.length) return '<div class="card empty">Geen recepten gevonden (recipes.json ontbreekt).</div>';
+  return `<section class="pane">${recipes.map(r => {
+    const f = funnel(d, r), max = Math.max(1, f.viewed), ss = d.ss.filter(s => s.rid === r.id);
+    const mins = ss.map(s => s.min).filter(x => x !== '' && x != null).map(Number), stars = ss.map(s => s.rating).filter(x => x !== '' && x != null).map(Number);
+    const chips = {}; ss.forEach(s => String(s.chips || '').split(', ').filter(Boolean).forEach(c => chips[c] = (chips[c] || 0) + 1));
+    const notes = ss.filter(s => s.note).sort((a, b) => String(b.updated).localeCompare(String(a.updated)));
+    const am = avg(mins);
+    return `<div class="card"><h2>${esc(r.title)}</h2><p class="sub">${esc(r.variant || '')}${r.variant ? ' · ' : ''}recepttijd ${r.minutes || '–'} min</p>
+      <div class="stats3"><div><b>${ss.length}</b><span>keer gekookt</span></div><div><b>${am == null ? '–' : Math.round(am) + ' min'}</b><span>gem. kooktijd${am != null && r.minutes ? ' (' + (am - r.minutes >= 0 ? '+' : '−') + Math.abs(Math.round(am - r.minutes)) + ')' : ''}</span></div><div><b>${nl1(avg(stars))}</b><span>gem. sterren</span></div></div>
+      ${f.viewed ? `<p class="sub">Hoeveel testers elk scherm bereikten</p><div class="funnel" role="table">${f.rows.map((row, k) => { const lost = k && f.rows[k-1].v > row.v; return `<div class="fr ${lost ? 'drop' : ''}" role="row" title="${esc(row.l)}: ${row.v}${lost ? ' (' + (f.rows[k-1].v - row.v) + ' afgehaakt)' : ''}"><span class="l" role="cell">${esc(row.l)}</span><span class="t" aria-hidden="true"><i style="width:${(row.v / max * 100).toFixed(1)}%"></i></span><span class="v" role="cell">${row.v}</span></div>`; }).join('')}</div>` : '<p class="sub">Nog niet bekeken door testers.</p>'}
+      ${Object.keys(chips).length ? `<p class="sub" style="margin-top:12px">Chips</p><div class="filters" style="margin-top:4px">${Object.entries(chips).sort((a, b) => b[1] - a[1]).map(([c, n]) => `<span class="chip">${esc(c)} ×${n}</span>`).join('')}</div>` : ''}
+      ${notes.length ? `<p class="sub" style="margin-top:12px">Notities</p><ul class="notes">${notes.slice(0, 8).map(s => `<li>${esc(s.note)} <small>— ${esc(s.name)}${s.rating !== '' ? ', ' + esc(s.rating) + '★' : ''}</small></li>`).join('')}</ul>` : ''}
+    </div>`; }).join('')}</section>`;
+}
+
+/* Feedback en fouten: één tijdlijn, filters, opgelost markeren, kopiëren voor Claude */
+const TYPE_IC = { 'Werkt niet': '🐞', 'Fout': '⚠', 'Snap ik niet': '?', 'Idee': '💡', 'Mooi': '♥' };
+function itemHtml(i){
+  const r = recipes.find(x => x.id === i.rid), done = i.status === 'opgelost';
+  return `<article class="item ${i.bug ? 'bug' : ''} ${done ? 'done' : ''}">
+    <div class="ih"><span class="chip ${i.bug ? 'bad' : i.type === 'Mooi' ? 'ok' : i.type === 'Snap ik niet' ? 'warn' : ''}">${TYPE_IC[i.type] || ''} ${esc(i.type)}</span><span class="who">${esc(i.name)}</span>${done ? '<span class="chip ok">✓ opgelost</span>' : ''}<span class="when" title="${esc(new Date(i.at).toLocaleString('nl-NL'))}">${ago(i.at)}</span></div>
+    <div class="msg">${esc(i.message)}</div>
+    <div class="where">${esc(i.screen || '')}${r ? ' · ' + esc(short(r.title)) : ''}${i.source ? ' · ' + esc(i.source) : ''}</div>
+    ${i.stack ? `<details class="stack"><summary>Technische details</summary><pre>${esc(i.stack)}\n\n${esc(i.device || '')} · ${esc(i.version || '')}</pre></details>` : ''}
+    <div class="ia"><button class="btn sm" type="button" data-mark="${esc(i.tab)}|${esc(i.id)}|${done ? 'nieuw' : 'opgelost'}">${done ? 'Heropen' : '✓ Opgelost'}</button></div>
+  </article>`;
+}
+const FF = [['open', 'Open'], ['alles', 'Alles'], ['Werkt niet', '🐞 Werkt niet'], ['Fout', '⚠ Fouten'], ['Snap ik niet', '? Snap ik niet'], ['Idee', '💡 Idee'], ['Mooi', '♥ Mooi']];
+function filtered(d){
+  return d.items.filter(i => (view.ff === 'alles' || (view.ff === 'open' ? i.status !== 'opgelost' : i.type === view.ff)) && (!view.ft || i.tid === view.ft));
+}
+function feedbackPane(d){
+  const list = filtered(d);
+  const count = k => d.items.filter(i => (k === 'alles' || (k === 'open' ? i.status !== 'opgelost' : i.type === k)) && (!view.ft || i.tid === view.ft)).length;
+  return `<section class="pane">
+    <div class="filters">${FF.map(([k, l]) => `<button class="f" type="button" data-ff="${esc(k)}" aria-pressed="${view.ff === k}">${l}<small>${count(k)}</small></button>`).join('')}
+      <select class="f" id="ft" aria-label="Tester"><option value="">Alle testers</option>${d.testers.map(t => `<option value="${esc(t.id)}" ${view.ft === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
+    <div class="row"><button class="btn primary sm" type="button" id="copy-claude" ${list.length ? '' : 'disabled'}>Kopieer ${list.length} voor Claude</button></div>
+    ${list.length ? `<div class="feed">${list.map(itemHtml).join('')}</div>` : '<div class="card empty">Niets in deze selectie.</div>'}
+  </section>`;
+}
+function claudeText(list){
+  return ['Feedback uit de testversie van Cooking by the Book (' + list.length + ' meldingen). Verwerk dit: groepeer per probleem, zeg wat je voorstelt en wat eerst moet.', '',
+    ...list.map(i => { const r = recipes.find(x => x.id === i.rid); return `- [${i.type}] ${i.name} (${i.tid}), ${new Date(i.at).toLocaleString('nl-NL')}: ${i.message}\n  Waar: ${i.screen || '?'}${r ? ' · ' + r.title : ''}${i.source ? ' · ' + i.source : ''}${i.status === 'opgelost' ? ' · (al opgelost)' : ''}`; })].join('\n');
+}
+
+/* Uitnodigen: link + QR per groep */
+function siteUrl(){ return location.origin + location.pathname.replace(/dashboard\.html$/, ''); }
+function inviteUrl(g){ const s = String(g || '').trim().toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/\s+/g, '-'); return siteUrl() + (s ? '?g=' + encodeURIComponent(s) : ''); }
+function qrSvg(text){ const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: 6, margin: 2, scalable: true }); }
+function uitnodigen(d){
+  const g = view.group ?? 'vrienden', url = inviteUrl(g);
+  const groups = {}; d.testers.forEach(t => groups[t.group || '(zonder groep)'] = (groups[t.group || '(zonder groep)'] || 0) + 1);
+  return `<section class="pane"><div class="inv">
+    <div class="card" style="display:grid;gap:12px">
+      <h2>Nodig proevers uit</h2>
+      <p class="sub">Elke groep krijgt een eigen link. Testers kiezen bij openen een naam en krijgen een test-ID; in het dashboard zie je per groep wie er meedoet.</p>
+      <div class="field"><label for="grp">Groep</label><input id="grp" value="${esc(g)}" placeholder="bijv. vrienden, familie, collega's" maxlength="30"></div>
+      <div class="filters">${['vrienden', 'familie', 'collega\'s', 'sport'].map(x => `<button class="f" type="button" data-grp="${esc(x)}" aria-pressed="${g === x}">${esc(x)}</button>`).join('')}</div>
+      <div class="link" id="inv-url">${esc(url)}</div>
+      <div class="row"><button class="btn primary" type="button" id="inv-share">Delen</button><button class="btn" type="button" id="inv-copy">Kopieer link</button><button class="btn" type="button" id="inv-png">QR opslaan</button></div>
+      ${Object.keys(groups).length ? `<table class="tbl"><thead><tr><th>Groep</th><th style="text-align:right">Testers</th></tr></thead><tbody>${Object.entries(groups).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n">${v}</td></tr>`).join('')}</tbody></table>` : ''}
+    </div>
+    <div class="qr" id="qr">${qrSvg(url)}<p>Doe mee met de Proefkeuken<small>${esc(g || 'scan met je camera')}</small></p></div>
+  </div></section>`;
+}
+const INVITE_TEXT = 'Doe je mee met mijn Proefkeuken? Ik test een vroege versie van mijn kookapp. Open de link op je telefoon, kies een naam en kook een recept mee. Tik op Feedback als iets je opvalt. Duurt 10 minuten (of een keer koken).';
+
+/* ---------- interactie ---------- */
+function bind(d){
+  const m = $('main');
+  m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { tab = b.dataset.go; render(); window.scrollTo(0, 0); });
+  // tooltip op staven (tik of hover)
+  const bars = $('bars');
+  if (bars) { let tip = null; const show = b => { bars.querySelectorAll('.b.on').forEach(x => x.classList.remove('on')); tip?.remove(); if (!b) return; b.classList.add('on'); tip = document.createElement('div'); tip.className = 'tip'; tip.textContent = b.dataset.tip; tip.style.left = (b.offsetLeft + b.offsetWidth / 2) + 'px'; tip.style.top = '14px'; bars.appendChild(tip); };
+    bars.querySelectorAll('.b').forEach(b => { b.onmouseenter = () => show(b); b.onclick = () => show(b); }); bars.onmouseleave = () => show(null); }
+  m.querySelectorAll('[data-tester]').forEach(b => b.onclick = () => { view.tester = b.dataset.tester; render(); window.scrollTo(0, 0); });
+  if ($('back')) $('back').onclick = () => { view.tester = null; render(); };
+  if ($('t-feed')) $('t-feed').onclick = () => { view.ft = view.tester; view.ff = 'alles'; view.tester = null; tab = 'feedback'; render(); window.scrollTo(0, 0); };
+  m.querySelectorAll('[data-ff]').forEach(b => b.onclick = () => { view.ff = b.dataset.ff; render(); });
+  if ($('ft')) $('ft').onchange = e => { view.ft = e.target.value; render(); };
+  if ($('copy-claude')) $('copy-claude').onclick = () => copy(claudeText(filtered(d)), 'Gekopieerd. Plak het in je chat met Claude');
+  m.querySelectorAll('[data-mark]').forEach(b => b.onclick = async () => {
+    const [tb, id, status] = b.dataset.mark.split('|');
+    const it = d.items.find(x => x.tab === tb && x.id === id); if (it) { const src = (tb === 'Fouten' ? data.fouten : data.feedback).find(x => (x.fid || x.eid) === id); if (src) src.status = status; }
+    render(); toast(status === 'opgelost' ? 'Gemarkeerd als opgelost' : 'Weer open');
+    if (DEMO) return;
+    const { key, url } = lsGet();
+    try { const j = await fetch(`${url}?key=${encodeURIComponent(key)}&action=mark&tab=${encodeURIComponent(tb)}&id=${encodeURIComponent(id)}&status=${status}`).then(r => r.json()); if (j.error) toast('Niet opgeslagen: ' + j.error); } catch(e) { toast('Niet opgeslagen, probeer het opnieuw'); }
+  });
+  // uitnodigen
+  const grp = $('grp');
+  if (grp) {
+    const upd = () => { view.group = grp.value; const u = inviteUrl(grp.value); $('inv-url').textContent = u; $('qr').innerHTML = qrSvg(u) + `<p>Doe mee met de Proefkeuken<small>${esc(grp.value || 'scan met je camera')}</small></p>`; m.querySelectorAll('[data-grp]').forEach(x => x.setAttribute('aria-pressed', x.dataset.grp === grp.value)); };
+    grp.oninput = upd;
+    m.querySelectorAll('[data-grp]').forEach(b => b.onclick = () => { grp.value = b.dataset.grp; upd(); });
+    $('inv-copy').onclick = () => copy(inviteUrl(grp.value), 'Link gekopieerd');
+    $('inv-share').onclick = async () => { const url = inviteUrl(grp.value); if (navigator.share) { try { await navigator.share({ title: 'Doe mee met de Proefkeuken', text: INVITE_TEXT, url }); } catch(e) {} } else copy(INVITE_TEXT + '\n' + url, 'Uitnodiging gekopieerd'); };
+    $('inv-png').onclick = () => savePng(inviteUrl(grp.value), grp.value);
+  }
+}
+async function copy(text, ok){
+  try { await navigator.clipboard.writeText(text); toast(ok); }
+  catch(e) { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast(ok); } catch(x) { toast('Kopiëren lukte niet'); } ta.remove(); }
+}
+function savePng(url, group){
+  const q = qrcode(0, 'M'); q.addData(url); q.make();
+  const n = q.getModuleCount(), cell = 14, pad = 4 * cell, w = n * cell + pad * 2, h = w + 110;
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.fillStyle = '#1c2419';
+  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (q.isDark(r, k)) x.fillRect(pad + k * cell, pad + r * cell, cell, cell);
+  x.textAlign = 'center'; x.font = '800 38px "Bricolage Grotesque", sans-serif'; x.fillText('Doe mee met de Proefkeuken', w / 2, w + 30);
+  x.fillStyle = '#5d6b57'; x.font = '500 22px "DM Mono", monospace'; x.fillText((group || 'Cooking by the Book'), w / 2, w + 70);
+  const a = document.createElement('a'); a.download = `uitnodiging-${(group || 'test').replace(/[^\w-]/g, '')}.png`; a.href = c.toDataURL('image/png'); a.click();
+}
+
+/* ---------- zonder sleutel ---------- */
+function renderSetup(err){
+  $('tabs').innerHTML = ''; $('upd').textContent = '';
+  const { key = '', url = '' } = lsGet();
+  $('main').innerHTML = `<section class="pane"><div class="card" style="display:grid;gap:12px">
+    <h2>Dashboard koppelen</h2>
+    ${err ? `<p class="demo-banner">${esc(err)}</p>` : ''}
+    <p class="sub">Open het dashboard via de link in je Google Sheet (tabblad <b>Instellingen</b>, regel Dashboard). Of vul de twee waarden hier in; ze blijven alleen op dit toestel.</p>
+    <div class="field"><label for="s-url">Web-app-URL</label><input id="s-url" value="${esc(url)}" placeholder="https://script.google.com/macros/s/…/exec"></div>
+    <div class="field"><label for="s-key">Dashboardsleutel</label><input id="s-key" value="${esc(key)}" autocomplete="off"></div>
+    <div class="row"><button class="btn primary" type="button" id="s-go">Koppelen</button><a class="btn" href="?demo#tab=overzicht">Bekijk met voorbeelddata</a></div>
+  </div></section>`;
+  $('s-go').onclick = () => { lsSet({ url: $('s-url').value.trim(), key: $('s-key').value.trim() }); load(); };
+}
+
+/* ---------- voorbeelddata (?demo) ---------- */
+function demoData(){
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const now = Date.now(), iso = t => new Date(t).toISOString();
+  const people = [['Sanne', 'SANNE-7K3F', 'vrienden', 0.8], ['Joost', 'JOOST-Q2MA', 'vrienden', 0.5], ['Mam', 'MAM-H8TX', 'familie', 0.6], ['Ilse', 'ILSE-4RWP', 'collegas', 0.35], ['Bram', 'BRAM-ZN6C', 'vrienden', 0.15]];
+  const testers = [], events = [], sessies = [], feedback = [], fouten = [];
+  const R = recipes.length ? recipes : [{ id: 'demo', title: 'Demo-recept', steps: [{}, {}, {}] }];
+  for (const [name, id, group, p] of people) {
+    const startDay = Math.floor(rnd() * 5) + 8; const days = [];
+    for (let k = startDay; k >= 0; k--) {
+      if (k !== startDay && rnd() > p) continue;
+      const base = now - k * 864e5 - (k ? 0 : 3600e3) - Math.floor(rnd() * 5) * 3600e3; days.push(dayKey(base));
+      const r = R[Math.floor(rnd() * R.length)], n = (r.steps || []).length;
+      let t = base; const ev = (kind, extra = {}) => events.push({ at: iso(t += 60e3 + rnd() * 120e3), tid: id, name, kind, rid: r.id, step: '', screen: '', details: '', ...extra });
+      ev('open', { rid: '' }); ev('pagina', { screen: 'receptpagina' });
+      if (rnd() < 0.75) {
+        ev('kook_start'); const stop = rnd() < 0.25 ? Math.floor(rnd() * n) : n;
+        for (let i = -2; i <= stop; i++) ev('stap', { step: i, screen: 'kookmodus' });
+        if (stop >= n) { const min = Math.round(22 + rnd() * 18); sessies.push({ sid: 'd' + events.length, tid: id, name, rid: r.id, title: r.title, date: dayKey(t), servings: 2, min, recipeMin: r.minutes || 25, rating: rnd() < 0.8 ? Math.min(5, 3 + Math.floor(rnd() * 3)) : '', chips: rnd() < 0.4 ? ['Te flauw', 'Te zout', 'Precies goed'][Math.floor(rnd() * 3)] : '', note: rnd() < 0.3 ? ['Kip was na 6 min al gaar', 'Saus iets te dun, meer pesto', 'Heerlijk! Volgende keer dubbele portie'][Math.floor(rnd() * 3)] : '', adj: '', updated: iso(t) }); ev('klaar'); }
+        else ev('kook_dicht', { step: stop });
+      }
+    }
+    const first = now - startDay * 864e5;
+    testers.push({ id, name, group, first: iso(first), last: events.filter(e => e.tid === id).map(e => e.at).sort().pop(), days: days.length, events: events.filter(e => e.tid === id).length, device: 'Linux; Android 14; Pixel 7', size: '412×915', version: 'v45', dayList: days.join(',') });
+  }
+  const fbs = [['SANNE-7K3F', 'Sanne', 'Snap ik niet', 'Waar zie ik hoeveel pasta ik nodig heb tijdens het koken?', 'kookmodus: stap 1 van 6 (Pasta koken)', 5], ['JOOST-Q2MA', 'Joost', 'Werkt niet', 'Timer ging niet af toen mijn scherm uit stond', 'kookmodus: stap 2 van 6 (Kip bruinen)', 1.2], ['MAM-H8TX', 'Mam', 'Mooi', 'Fijn dat je de ingrediënten kunt afvinken!', 'kookmodus: klaarzetten', 3], ['ILSE-4RWP', 'Ilse', 'Idee', 'Boodschappenlijst maken vanuit het recept?', 'receptpagina', 2], ['SANNE-7K3F', 'Sanne', 'Werkt niet', 'Knop Verder reageerde pas na 2x tikken', 'kookmodus: stap 4 van 6 (Saus mengen)', 0.3]];
+  fbs.forEach(([tid, name, type, message, screen, dAgo], k) => feedback.push({ fid: 'f' + k, at: iso(now - dAgo * 864e5), tid, name, type, message, screen, rid: R[0].id, context: '', status: k === 1 ? 'opgelost' : 'nieuw' }));
+  fouten.push({ eid: 'e1', at: iso(now - 0.1 * 864e5), tid: 'BRAM-ZN6C', name: 'Bram', message: "Cannot read properties of undefined (reading 'timer')", source: 'app.js:1094:41', screen: 'kookmodus: stap 3 van 6 (Groente)', rid: R[0].id, version: 'v45', device: 'Linux; Android 13; SM-A536B', stack: "TypeError: Cannot read properties of undefined (reading 'timer')\n    at adjustTimer (app.js:1094:41)\n    at HTMLButtonElement.<anonymous> (app.js:1001:7)", status: 'nieuw' });
+  events.sort((a, b) => a.at.localeCompare(b.at));
+  return { generated: iso(now), testers, events, sessies, feedback, fouten };
+}
+
+load();
+})();
+</script>
+</body>
+</html>

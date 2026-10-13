@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#377A44"/><stop offset="1" stop-color="#2A5F33"/></linearGradient></defs>
+  <rect width="1024" height="1024" fill="url(#g)"/>
+  <g transform="translate(512 512) scale(0.8) translate(-512 -512) translate(-71 -78)">
+  <!-- steel: lang, licht omhoog -->
+  <g transform="rotate(-10 760 434)"><rect x="752" y="408" width="270" height="52" rx="26" fill="#F6F8F4"/><circle cx="986" cy="434" r="12" fill="#2A5F33"/></g>
+  <!-- koekenpan: ondiep, schuine wanden -->
+  <path d="M226 440 H 798 L 742 568 Q 730 600 690 600 H 334 Q 294 600 282 568 Z" fill="#F6F8F4"/>
+  <rect x="204" y="408" width="616" height="52" rx="26" fill="#F6F8F4"/>
+  <rect x="236" y="421" width="552" height="20" rx="10" fill="#1F4A27"/>
+  <path d="M226 460 H 798 L 791 478 H 233 Z" fill="#E3EADF"/>
+  <!-- bladwijzer, gevouwen over de rand -->
+  <path d="M330 400 h 96 v 22 h -96 Z" fill="#B97E08"/>
+  <path d="M330 422 h 96 v 262 l -48 -40 l -48 40 Z" fill="#E8A317"/>
+  <!-- vuur -->
+  <path d="M404 850 C 347.3 850, 344.6 762, 393.2 690 C 401.3 725.2, 417.5 738, 422.9 754 C 431 734.8, 437.48 722, 436.4 706 C 468.8 762, 460.7 850, 404 850 Z" fill="#E8A317"/><path d="M404 850 C 377 850, 377 798.8, 404 770 C 431 798.8, 431 850, 404 850 Z" fill="#F7D27A"/><path d="M512 850 C 442.7 850, 439.4 737.25, 498.8 645 C 508.7 690.1, 528.5 706.5, 535.1 727 C 545 702.4, 552.92 686, 551.6 665.5 C 591.2 737.25, 581.3 850, 512 850 Z" fill="#E8A317"/><path d="M512 850 C 479 850, 479 784.4, 512 747.5 C 545 784.4, 545 850, 512 850 Z" fill="#F7D27A"/><path d="M620 850 C 563.3 850, 560.6 762, 609.2 690 C 617.3 725.2, 633.5 738, 638.9 754 C 647 734.8, 653.48 722, 652.4 706 C 684.8 762, 676.7 850, 620 850 Z" fill="#E8A317"/><path d="M620 850 C 593 850, 593 798.8, 620 770 C 647 798.8, 647 850, 620 850 Z" fill="#F7D27A"/></g></svg>
