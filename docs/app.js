@@ -14,6 +14,7 @@
  *   11. receptenarchief: veilige kopie, los van wat het kookboek toont
  *   12. testmenu
  *   12b. test version: tester id, events, errors, feedback (only with TESTER)
+ *   12c. onboarding: missions, tips and the proefrit (testers; Wes sees it via testmenu → Onboarding bekijken)
  *   13. hold and swipe to tick several items
  *   14. editor
  *   15. boot
@@ -75,11 +76,11 @@ function saveLocal(){ try { localStorage.setItem('kb-progress', JSON.stringify(p
 function applyProgress(r){
   view.loadedFor = r.id;
   const p = progress[r.id]; if (!p) return;
-  view.checked = new Set(p.checked || []); view.prepped = new Set(p.prepped || []); view.tasks = new Set(p.tasks || []); view.sessionStart = p.sessionStart || null; view.adjLog = p.adjLog || {}; view.lastSession = p.lastSession || null; view.done = new Set(p.done || []); view.cur = Math.max(0, p.cur || 0);
+  view.checked = new Set(p.checked || []); view.prepped = new Set(p.prepped || []); view.tasks = new Set(p.tasks || []); view.sessionStart = p.sessionStart || null; view.adjLog = p.adjLog || {}; view.lastSession = p.lastSession || null; view.done = new Set(p.done || []); view.cur = Math.max(0, p.cur || 0); view.proefrit = !!p.proefrit;
   if (view.servings == null && p.servings) view.servings = p.servings;
 }
 function persist(r){
-  progress[r.id] = { ...(progress[r.id]||{}), checked:[...view.checked], prepped:[...(view.prepped||[])], tasks:[...(view.tasks||[])], sessionStart:view.sessionStart||null, adjLog:view.adjLog||{}, lastSession:view.lastSession||null, done:[...view.done], servings:view.servings, cur:Math.max(0, Math.min(view.cur, 999)), updatedAt:new Date().toISOString() };
+  progress[r.id] = { ...(progress[r.id]||{}), checked:[...view.checked], prepped:[...(view.prepped||[])], tasks:[...(view.tasks||[])], sessionStart:view.sessionStart||null, adjLog:view.adjLog||{}, lastSession:view.lastSession||null, done:[...view.done], servings:view.servings, cur:Math.max(0, Math.min(view.cur, 999)), proefrit:view.proefrit || undefined, updatedAt:new Date().toISOString() };
   pushProgress(r.id);
 }
 // save one recipe's progress locally and to the database, without touching the open recipe's view
@@ -102,7 +103,7 @@ function sessionAge(r){
 function openSessions(){
   return recipes.map(r => {
     const p = progress[r.id], n = (r.steps||[]).length, a = sessionAge(r);
-    if (!a || !n || (p.cur||0) >= n || (p.done||[]).length >= n) return null;
+    if (!a || !n || p.proefrit || (p.cur||0) >= n || (p.done||[]).length >= n) return null;
     return { r, p, ...a };
   }).filter(Boolean).sort((a, b) => b.last - a.last);
 }
@@ -282,7 +283,7 @@ function paintPlate(canvas, seed){
 function go(hash){ if (location.hash === '#'+hash || (!hash && !location.hash)) render(); else location.hash = hash; }
 let draftFrom = null, carryServings = null;
 window.addEventListener('hashchange', () => { const c = carryServings; carryServings = null; if (location.hash !== '#nieuw') draftFrom = null; resetView(); if (c) view.servings = c; render(); window.scrollTo(0,0); });
-function resetView(){ if (cookEl) { cookEl.remove(); cookEl = null; document.documentElement.style.overflow = ''; } sheetOpen = false; menuOpen = false; moreOpen = false; view.servings=null; view.checked=new Set(); view.prepped=new Set(); view.tasks=new Set(); view.done=new Set(); view.cook=false; view.cur=0; view.frzOpen=false; view.loadedFor=null; view.reviewOpen=false; view.reviewSid=null; releaseWake(); }
+function resetView(){ if (cookEl) { cookEl.remove(); cookEl = null; document.documentElement.style.overflow = ''; } sheetOpen = false; menuOpen = false; moreOpen = false; view.servings=null; view.checked=new Set(); view.prepped=new Set(); view.tasks=new Set(); view.done=new Set(); view.cook=false; view.cur=0; view.frzOpen=false; view.loadedFor=null; view.reviewOpen=false; view.reviewSid=null; view.proefrit=false; releaseWake(); }
 document.getElementById('home-btn').onclick = () => go('');
 newBtn.onclick = () => go('nieuw');
 const cameFrom = {};
@@ -296,6 +297,7 @@ function render(){
   document.getElementById('stats-btn').setAttribute('aria-pressed', hh === 'keuken');
   newBtn.hidden = !canWrite;
   if (!loaded) return;
+  obTips();   // a tip from the previous page goes, one for this page may appear
   const h = location.hash.slice(1);
   if (h === 'nieuw') return canWrite ? renderEditor(null) : renderLibrary();
   if (h.startsWith('bewerk-')) { const r = recipes.find(x=>x.id===h.slice(7)); return r && canWrite ? renderEditor(r) : renderLibrary(); }
@@ -331,7 +333,7 @@ function renderLibrary(){
   app.innerHTML = `
   <div class="wrap">
     <section class="lib-head">
-      ${testerWelcome() || sessionBanner() || askBanner()}
+      ${testerWelcome() || obCard() + (sessionBanner() || askBanner())}
       <h1>Wat ga je <em>vandaag</em> koken?</h1>
       <div class="search">${ICON.search}<input id="q" type="search" placeholder="Zoek op gerecht of ingrediënt, bijv. kip" value="${esc(state.q)}" autocomplete="off" aria-label="Zoek recepten"></div>
       <div class="chips" role="toolbar" aria-label="Filter">${tags.map(t => { const def = t !== 'Alles' && t === stats.defaultTag; return `<button class="chip" type="button" data-tag="${esc(t)}" aria-pressed="${t===state.tag}"${def ? ' aria-label="' + esc(t) + ', standaard bij openen"' : ''}>${esc(t)}${def ? `<span class="pin" aria-hidden="true">${ICON.pin}</span>` : ''}</button>`; }).join('')}</div>
@@ -354,7 +356,7 @@ function renderLibrary(){
   app.querySelectorAll('.card').forEach(b => b.onclick = () => go('recept-'+b.dataset.id));
   app.querySelectorAll('.plate canvas').forEach(cv => paintPlate(cv, cv.dataset.seed));
   const e = document.getElementById('empty-new'); if (e) e.onclick = () => go('nieuw');
-  bindTesterWelcome(); bindSession(); bindAsk();
+  bindTesterWelcome(); bindSession(); bindAsk(); bindObCard(); obTips();
 }
 /* ---------- your review on the recipe page: read it, or change it after the end screen ---------- */
 // the last cooking session of this recipe (where its stars and chips live)
@@ -524,12 +526,14 @@ function renderRecipe(r){
     if (f.stale) stopTimers(t => t.rid === r.id && !t.running);
     openCook(r, Math.max(0, steps.length - 1)); finishSession(r, f.endAt); renderCook(r);
   }
+  else if (pendingProefrit) { pendingProefrit = false; resetSession(r); openCook(r, undefined, true); }
   else if (pendingResume) { pendingResume = false; openCook(r, view.cur > 0 || view.sessionStart ? view.cur : undefined); }
   else if (pendingCookStep != null) { const st = pendingCookStep; pendingCookStep = null; openCook(r, st); }
   else if (view.cook) renderCook(r);
   renderTimerBar();
   const fav = document.getElementById('fav'); if (fav) fav.onclick = () => save(r.id, {favorite:!r.favorite}, r.favorite?'Uit favorieten':'Toegevoegd aan favorieten');
   const ed = document.getElementById('edit'); if (ed) ed.onclick = () => { view.heroMore = false; go('bewerk-'+r.id); };
+  obTips();
 }
 const famKey = r => r.family || r.id;
 const vName = r => r.variant || 'Origineel';
@@ -693,25 +697,27 @@ function cookFlow(r){
   });
   return { tasks, atStep, upfront, waits, parallel, ans };
 }
-function openCook(r, atStep){
+// proef: start a proefrit (onboarding): click through, nothing counts
+function openCook(r, atStep, proef){
   const n = (r.steps||[]).length; if (!n) return;
   if (atStep == null && sessionAge(r)?.stale) resetSession(r);   // an old, forgotten session starts over
   const fresh = (view.done.size >= n || view.cur >= n) || (view.cur === 0 && view.done.size === 0 && !view.sessionStart);
   if (view.done.size >= n || view.cur >= n) { view.done.clear(); view.cur = 0; }
   if (atStep != null) view.cur = atStep;
-  else if (fresh) { view.cur = (progress[r.id]?.cooked||0) >= 2 ? -1 : -2; view.prepped = new Set(); view.tasks = new Set(); view.adjLog = {}; view.sessionStart = null; view.newBadges = []; view.chipsSaved = false; }
-  persist(r); track('kook_start', { rid: r.id, at: view.cur });
-  view.cook = true; view.rated = false; view.askedFinish = false; view.tSaved = {}; view.renderedStep = null; view.leaveAsk = null; view.fbCopied = false; requestWake();
+  else if (fresh) { view.cur = (progress[r.id]?.cooked||0) >= 2 ? -1 : -2; view.prepped = new Set(); view.tasks = new Set(); view.adjLog = {}; view.sessionStart = null; view.newBadges = []; view.chipsSaved = false; view.proefrit = !!proef; }
+  persist(r); track('kook_start', { rid: r.id, at: view.cur, ...proefTag() });
+  view.cook = true; view.rated = false; view.proefEnd = null; view.askedFinish = false; view.tSaved = {}; view.renderedStep = null; view.leaveAsk = null; view.fbCopied = false; requestWake();
   try { history.pushState({cook:1}, ''); } catch(e) {}
   renderCook(r);
 }
 function closeCook(fromPop){
   sheetOpen = false; menuOpen = false; moreOpen = false; view.testMode = false;
-  if (view.cook) track('kook_dicht', { i: view.cur, n: (currentRecipe()?.steps||[]).length });
+  if (view.cook) track('kook_dicht', { i: view.cur, n: (currentRecipe()?.steps||[]).length, ...proefTag() });
   view.cook = false; releaseWake();
   if (view.cur < 0) view.cur = 0;
   cookEl?.remove(); cookEl = null; document.documentElement.style.overflow = '';
   if (!fromPop) { try { const st = history.state; if (st?.cook) { ignorePop = true; history.go(st.layer ? -2 : -1); } } catch(e) {} }
+  view.proefEnd = null;
   const r = currentRecipe(); if (r) rerender(r);
   renderTimerBar();
 }
@@ -743,7 +749,7 @@ window.addEventListener('popstate', () => {
 });
 function resetSession(r){
   stopTimers(t => t.rid === r.id);
-  view.done = new Set(); view.prepped = new Set(); view.tasks = new Set(); view.adjLog = {}; view.sessionStart = null; view.newBadges = []; view.cur = 0;
+  view.done = new Set(); view.prepped = new Set(); view.tasks = new Set(); view.adjLog = {}; view.sessionStart = null; view.newBadges = []; view.cur = 0; view.proefrit = false;
   persist(r); refreshTimers();
 }
 function buzz(ms){ try { navigator.vibrate?.(ms); } catch(e) {} }
@@ -762,6 +768,16 @@ function finishSession(r, endAt){
   const n = r.steps.length;
   view.cur = n; view.done = new Set(r.steps.map((_, k) => k));
   if (view.testMode) { view.lastSession = null; view.newBadges = []; persist(r); return; }
+  // a proefrit, or (with onboarding on) tapping through in a few minutes: an end screen, but nothing counts.
+  // Only when you tapped to the end yourself: "Ja, afronden" on the home screen (endAt) is always a real session.
+  const quick = endAt == null && obActive() && (!view.sessionStart || (Date.now() - view.sessionStart) / 60000 < quickLimit(r));
+  if (view.proefrit || quick) {
+    view.proefEnd = view.proefrit ? 'proefrit' : 'snel'; view.proefrit = false; view.lastSession = null; view.newBadges = [];
+    persist(r); track('proefrit_klaar', { rid: r.id, via: view.proefEnd }); obComplete('proefrit'); buzz(20); return;
+  }
+  countSession(r, endAt);
+}
+function countSession(r, endAt){
   const p = progress[r.id] || {}; p.cooked = (p.cooked||0) + 1; p.lastCooked = isoDay(new Date(endAt || Date.now())); progress[r.id] = p;
   recordSession(r, endAt);
   persist(r); buzz(20);
@@ -792,6 +808,7 @@ function renderCook(r, dir){
         <span class="eyebrow">Even afstemmen</span>
         <h2>Hoe kook je vandaag?</h2>
         <p class="cook-sub">Dan pas ik de stappen erop aan.</p>
+        ${proefNote()}
       </div>
       <div class="ck-right qs">
         <div class="qq"><b>Voor hoeveel porties?</b><div class="scaler"><button type="button" id="ck-minus" aria-label="Minder porties" ${view.servings<=1?'disabled':''}>−</button><output aria-live="polite">${view.servings}</output><button type="button" id="ck-plus" aria-label="Meer porties">+</button></div></div>
@@ -803,6 +820,7 @@ function renderCook(r, dir){
     body = `<div class="ck-left">
         <span class="eyebrow">Voordat je begint</span>
         <h2>${flow.upfront.length ? 'Snijd en zet klaar' : 'Zet alles klaar'}</h2>
+        ${proefNote()}
         <button class="settings-line" type="button" id="ck-change">${portions(view.servings)} · ${flow.ans.cut==='no'?'nog snijden':'alles gesneden'} · ${flow.ans.mode==='parallel'?'dingen tegelijk':'rustig aan'} <span>Wijzigen</span></button>
         <p class="cook-sub">${n} stappen${r.minutes ? ` · ±${r.minutes} min` : ''} · ${portions(view.servings)}.${Object.keys(flow.atStep).length ? ' Het overige snijwerk doe je straks tijdens het wachten.' : ''}</p>
         ${pan ? `<p class="cook-sub"><b>${esc(pan.label)}:</b> ${esc(pan.value)}</p>` : ''}
@@ -813,6 +831,8 @@ function renderCook(r, dir){
         <span class="eyebrow" id="prep-count">${got}/${total} klaargezet</span>
         <ul class="ing-list ck-list">${(r.ingredients||[]).map((ing,k)=>{ const x=ingText(ing,factor); return `<li><label><input type="checkbox" data-pi="${k}" ${view.prepped.has(k)?'checked':''}><span class="amt">${esc(x.amt)}</span><span>${esc(x.name)}</span></label></li>`; }).join('')}</ul>
       </div>`;
+  } else if (finished && view.proefEnd) {
+    body = proefEndHtml(r);
   } else if (finished) {
     body = `<div class="ck-left cook-done">
         <span class="eyebrow">Alle ${n} stappen klaar${p.cooked ? ` · ${p.cooked}× gekookt` : ''}</span>
@@ -884,7 +904,7 @@ function renderCook(r, dir){
   cookEl.innerHTML = `
     <div class="cook-top">
       <button class="btn ghost icon-btn" type="button" id="ck-close" aria-label="Kookmodus sluiten"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-      <span class="ttl">${view.testMode ? '<b class="testtag">TEST</b> ' : ''}${esc(r.title)} · ${portions(view.servings)}</span>
+      <span class="ttl">${view.testMode ? '<b class="testtag">TEST</b> ' : view.proefrit || view.proefEnd ? '<b class="testtag proef">PROEFRIT</b> ' : ''}${esc(r.title)} · ${portions(view.servings)}</span>
       <button class="btn ghost icon-btn" type="button" id="ck-ing" aria-label="Ingrediënten" aria-expanded="${sheetOpen}">${ICON.list}</button>
       <button class="btn ghost icon-btn" type="button" id="ck-more" aria-label="Meer opties" aria-expanded="${moreOpen}">${ICON.dots}</button>
     </div>
@@ -914,7 +934,7 @@ function renderCook(r, dir){
     </div>` : ''}
     ${menuOpen ? `<div class="sheet-back" id="ck-menu-back"></div><div class="sheet menu" role="dialog" aria-label="Kookmodus verlaten"><div class="sheet-head"><div class="grab" aria-hidden="true"></div><h3>${i === n-1 ? 'Klaar met koken?' : 'Kookmodus verlaten?'}</h3></div>
       <div class="mopts">
-        ${i === n-1 ? `<button class="mopt go" type="button" id="m-finish">${ICON.check}<span><b>Klaar, afronden</b><small>${view.testMode ? 'Naar het eindscherm.' : 'Telt mee in je keuken. Daarna beoordelen en markeren als getest.'}</small></span></button>` : ''}
+        ${i === n-1 ? `<button class="mopt go" type="button" id="m-finish">${ICON.check}<span><b>Klaar, afronden</b><small>${view.testMode || view.proefrit ? 'Naar het eindscherm.' : 'Telt mee in je keuken. Daarna beoordelen en markeren als getest.'}</small></span></button>` : ''}
         <button class="mopt" type="button" id="m-pause">${ICON.pause}<span><b>Pauzeren</b><small>Later verder waar je was. Timers blijven lopen.</small></span></button>
         <button class="mopt" type="button" id="m-restart">${ICON.reset}<span><b>Opnieuw beginnen</b><small>Vinkjes, stappen en timers van dit recept terug naar het begin.</small></span></button>
         <button class="mopt danger" type="button" id="m-stop">${ICON.xmark}<span><b>Stoppen</b><small>Sessie beëindigen zonder op te slaan. Telt niet mee in je keuken.</small></span></button>
@@ -940,6 +960,7 @@ function renderCook(r, dir){
   let sx = 0, sy = 0;
   main.addEventListener('touchstart', e => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, {passive:true});
   main.addEventListener('touchend', e => { if (e.target.closest('textarea,input,label,.timer-adj')) return; const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; if (Math.abs(dx) > 60 && Math.abs(dy) < 60) { if (dx < 0 && !finished) cookGo(r, 1); else if (dx > 0 && i > -2) { if (finished) { view.cur = n-1; persist(r); renderCook(r,-1); } else cookGo(r,-1); } } }, {passive:true});
+  obTips();
 }
 /* ---------- cook mode: every tap and checkbox, in one place ----------
    To add a button: give it an id (or a data-* attribute) in renderCook and add one line to COOK_CLICK.
@@ -1022,6 +1043,10 @@ const COOK_CLICK = {
   '#ck-end':          c => leaveEnd(c, 'close'),
   '#ck-leave-go':     () => doLeave(view.leaveAsk?.to),
   '#ck-leave-stay':   ({ r }) => { view.leaveAsk = null; renderCook(r); },
+  // end screen of a proefrit (onboarding)
+  '#ck-real':         ({ r }) => { view.proefEnd = null; countSession(r); track('echt_gekookt', { rid: r.id }); renderCook(r); toast('Telt mee. Geef het nog sterren!'); },
+  '#ck-ob-fb':        () => openFeedback(),
+  '#ck-ob-home':      () => { closeCook(true); go(''); },
 };
 const COOK_CHANGE = {
   // cook-mode checklist is separate from the shopping checklist on the recipe page
@@ -1233,10 +1258,12 @@ const BADGES = [
   ['fifty',  'box',    '50 maaltijden',        'Kook in totaal 50 porties', () => stats.sessions.reduce((a, s) => a + (s.servings||0), 0) >= 50]
 ];
 function evalBadges(){ const got = []; for (const [k,,,, test] of BADGES) if (!stats.badges[k] && test()) { stats.badges[k] = today(); got.push(k); } return got; }
+// faster than this (minutes) is clicking through, not cooking: no cooking time, and with onboarding on a proefrit
+const quickLimit = r => Math.max(5, (r.minutes || 0) * 0.4);
 function recordSession(r, endAt){
   let mins = view.sessionStart ? Math.round(((endAt || Date.now()) - view.sessionStart) / 60000) : null;
   // clicking through without really cooking should not count as a cooking time
-  if (mins != null && mins < Math.max(5, (r.minutes || 0) * 0.4)) mins = null;
+  if (mins != null && mins < quickLimit(r)) mins = null;
   const sess = { id:newId(), rid:r.id, title:r.title, date:endAt ? isoDay(new Date(endAt)) : today(), servings:view.servings, mode:cookAnswers(r).mode, min:mins, recipeMin:r.minutes || null,
     protein: r.nutrition?.protein != null ? Math.round(r.nutrition.protein * view.servings) : null,
     cost: costPP(r) != null ? +(costPP(r) * view.servings).toFixed(2) : null,
@@ -1244,7 +1271,7 @@ function recordSession(r, endAt){
   stats.sessions.push(sess);
   view.lastSession = sess.id; view.newBadges = evalBadges(); view.sessionStart = null;
   track('klaar', { rid: r.id, sid: sess.id, min: sess.min, recipeMin: sess.recipeMin });
-  saveStats();
+  saveStats(); obComplete('koken');
 }
 function lastSession(){ return stats.sessions.find(s => s.id === view.lastSession) || null; }
 const levelDots = lv => `<span class="lvl" aria-label="Niveau ${lv} van 3">${[1,2,3].map(k => `<i class="${k<=lv?'on':''}"></i>`).join('')}</span>`;
@@ -1386,7 +1413,7 @@ function bindArchive(){
 }
 
 /* ---------- testmenu ---------- */
-const APP_VERSION = 'v48 · 13 okt 2026';
+const APP_VERSION = 'v49 · 13 okt 2026';
 let lastSync = null, syncErr = null, wakeState = 'nog niet gebruikt', vibrateState = 'nog niet getest';
 const ago = t => { if (!t) return 'nog niet'; const s = Math.round((Date.now() - t) / 1000); return s < 60 ? `${s} s geleden` : s < 3600 ? `${Math.round(s/60)} min geleden` : `${Math.round(s/3600)} uur geleden`; };
 function testVibrate(){ let ok = false; try { ok = !!navigator.vibrate?.([120, 80, 120]); } catch(e) {} vibrateState = ok ? 'werkt' : 'geblokkeerd'; return ok; }
@@ -1432,6 +1459,7 @@ function renderTest(){
       <button class="btn" type="button" id="t-timer">${ICON.clock}Timer van 10 s</button>
       <button class="btn" type="button" id="t-wake">Scherm aan houden testen</button>
       ${recipes.length ? `<button class="btn" type="button" id="t-end">${ICON.pan}Eindscherm kookmodus</button>` : ''}
+      <button class="btn" type="button" id="t-ob">${ICON.check}${obDemo() ? 'Onboarding opnieuw' : 'Onboarding bekijken'}</button>
     </div>
 
     ${db ? archiveHtml() : ''}
@@ -1463,6 +1491,8 @@ function renderTest(){
   $('t-timer').onclick = () => { ensureAudio(); allTimers['_test:0'] = { rid:'_test', i:0, title:'Testtimer', rtitle:'Test', total:10, left:10, end:Date.now()+10000, running:true }; saveTimers(); startTicker(); refreshTimers(); toast('Testtimer loopt, kijk bovenin'); renderTest(); };
   $('t-wake').onclick = async () => { await requestWake(); toast(wakeState === 'actief' ? 'Scherm blijft aan' : 'Scherm aan houden lukt hier niet'); setTimeout(releaseWake, 3000); renderTest(); };
   const te = $('t-end'); if (te) te.onclick = () => { const r = recipes[0]; view.testMode = true; pendingCookStep = (r.steps||[]).length - 1; go('recept-' + r.id); };
+  // see what a tester sees: missions, tips and the proefrit, from the start (your own cooking stays as it is)
+  $('t-ob').onclick = () => { try { localStorage.removeItem('kb-ob'); } catch(e) {} lsSet('kb-ob-demo', true); obStart(); go(''); toast('Onboarding-demo: zo ziet een tester het'); };
   if (db && archiveReady) bindArchive();
   app.querySelectorAll('[data-wipe]').forEach(b => b.onclick = () => {
     const what = b.dataset.wipe, rid = $('w-scope').value, scope = rid ? `"${shortTitle(recipes.find(x => x.id === rid)?.title)}"` : 'alle recepten';
@@ -1499,6 +1529,13 @@ function wipe(what, ids){
    The invite link carries the group (?g=vrienden). no-cors POST: the app cannot read the answer, so a resolved fetch
    counts as sent and a network failure keeps the items in the queue (kb-ev-queue) for the next try. */
 const FB_TYPES = ['Snap ik niet', 'Werkt niet', 'Mooi', 'Idee'];
+// what each kind of feedback is for, and an example (feedback sheet + the feedback mission)
+const FB_HELP = {
+  'Snap ik niet': ['Je weet niet wat iets doet, of wat je nu moet doen.', 'Bijv. ik snapte niet waar ik moest tikken om verder te gaan'],
+  'Werkt niet':   ['Iets gaat mis, loopt vast of klopt niet. Wes krijgt er direct een melding van.', 'Bijv. de timer piepte niet toen hij klaar was'],
+  'Mooi':         ['Iets wat je goed of fijn vindt, zodat het zo blijft.', 'Bijv. fijn dat ik tijdens het wachten al kan snijden'],
+  'Idee':         ['Iets wat handig zou zijn of beter kan.', 'Bijv. een knop om het recept naar een vriend te sturen']
+};
 const lsGet = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch(e) { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} };
 function testerName(){ return lsGet('kb-tester-name', ''); }
@@ -1524,7 +1561,9 @@ function track(kind, data = {}){
   const r = currentRecipe();
   const item = { kind, at: new Date().toISOString(), screen: screenName(), rid: r?.id || '', ...data };
   const q = lsGet('kb-ev-queue', []); q.push(item); lsSet('kb-ev-queue', q.slice(-400));
-  clearTimeout(track.t); track.t = setTimeout(flushEvents, kind === 'feedback' || kind === 'fout' ? 300 : 4000);
+  // send soon (feedback and errors fast); a later event never postpones a flush that is already due sooner
+  const wait = kind === 'feedback' || kind === 'fout' ? 300 : 4000, due = Date.now() + wait;
+  if (!track.t || due < track.due) { clearTimeout(track.t); track.due = due; track.t = setTimeout(() => { track.t = null; flushEvents(); }, wait); }
 }
 let flushing = false;
 async function flushEvents(){
@@ -1544,7 +1583,7 @@ async function flushEvents(){
 function trackCook(r){
   if (!TESTER || !r) return;
   const key = r.id + ':' + view.cur; if (trackCook.last === key) return; trackCook.last = key;
-  track('stap', { rid: r.id, i: view.cur, n: (r.steps||[]).length });
+  track('stap', { rid: r.id, i: view.cur, n: (r.steps||[]).length, ...proefTag() });
 }
 // finished sessions (with stars, chips, note, timer changes) are sent whenever they change, so later reviews arrive too
 function trackSessions(){
@@ -1568,7 +1607,7 @@ function trackError(msg, src, stack){
   track('fout', { message: String(msg).slice(0, 300), source: String(src || '').slice(0, 200), stack: String(stack || '').slice(0, 900) });
 }
 function openFeedback(){
-  if (!TESTER) return;
+  if (!TESTER && !obDemo()) return;
   document.getElementById('fb-root')?.remove();
   const root = document.createElement('div'); root.id = 'fb-root';
   const ctx = feedbackContext(), t = testerInfo();
@@ -1577,27 +1616,32 @@ function openFeedback(){
       <div class="sheet-head"><div class="grab" aria-hidden="true"></div><div class="sh-row"><h3>Feedback</h3><button class="sh-x" type="button" id="fb-x" aria-label="Sluiten">${ICON.xmark}</button></div></div>
       <div class="fb-body">
         <div class="chips2" role="group" aria-label="Soort feedback">${FB_TYPES.map((x, k) => `<button type="button" class="chip2" data-fbt="${esc(x)}" aria-pressed="${k === 0}">${x}</button>`).join('')}</div>
+        <p class="fb-help" id="fb-help" aria-live="polite">${FB_HELP[FB_TYPES[0]][0]}</p>
         <label class="cook-sub" for="fb-msg">Wat viel je op?</label>
-        <textarea id="fb-msg" rows="4" placeholder="Bijv. ik snapte niet waar ik moest tikken om verder te gaan"></textarea>
+        <textarea id="fb-msg" rows="4" placeholder="${esc(FB_HELP[FB_TYPES[0]][1])}"></textarea>
         <p class="fb-ctx">Gaat automatisch mee: ${esc(screenName())}${currentRecipe() ? ' · ' + esc(currentRecipe().title) : ''}${t.id ? ' · ' + esc(t.id) : ''}</p>
         <button class="btn primary" type="button" id="fb-send">Versturen</button>
       </div>
     </div>`;
   document.body.appendChild(root);
-  const close = () => root.remove();
+  const close = () => { root.remove(); obTips(); };
   root.querySelector('#fb-back').onclick = close; root.querySelector('#fb-x').onclick = close;
-  root.querySelectorAll('[data-fbt]').forEach(b => b.onclick = () => { root.querySelectorAll('[data-fbt]').forEach(x => x.setAttribute('aria-pressed', x === b)); b.classList.add('tapped'); });
+  root.querySelectorAll('[data-fbt]').forEach(b => b.onclick = () => { root.querySelectorAll('[data-fbt]').forEach(x => x.setAttribute('aria-pressed', x === b)); b.classList.add('tapped');
+    const h = FB_HELP[b.dataset.fbt] || ['', '']; root.querySelector('#fb-help').textContent = h[0]; root.querySelector('#fb-msg').placeholder = h[1]; });
   root.querySelector('#fb-send').onclick = () => {
     const message = root.querySelector('#fb-msg').value.trim(), type = root.querySelector('[data-fbt][aria-pressed="true"]')?.dataset.fbt || FB_TYPES[0];
     if (!message) { root.querySelector('#fb-msg').focus(); toast('Schrijf eerst kort wat je opviel'); return; }
     track('feedback', { type, message: message.slice(0, 2000), context: ctx });
-    close(); toast(type === 'Werkt niet' ? 'Verstuurd, Wes krijgt er direct een melding van' : 'Verstuurd, dank je!');
+    close(); toast(!TESTER ? 'Demo: niet verstuurd (alleen in de Proefkeuken)' : type === 'Werkt niet' ? 'Verstuurd, Wes krijgt er direct een melding van' : 'Verstuurd, dank je!');
+    obComplete('feedback');
+    if (view.cook) { const r = currentRecipe(); if (r) renderCook(r); } else if (!location.hash) renderLibrary();
   };
   setTimeout(() => root.querySelector('#fb-msg')?.focus(), 250);
+  obTips();
 }
 function testerWelcome(){
   if (!TESTER || lsGet('kb-tester-welcomed', false)) return '';
-  return `<div class="sesscard tester-welcome" id="tw"><p><b>Welkom in de Proefkeuken!</b><small>Je test een vroege versie van mijn kookapp. Kijk rond, open een recept en loop de kookmodus door. Tik op <b>Feedback</b> (rechtsboven) bij alles wat opvalt, onduidelijk is of beter kan.</small></p>
+  return `<div class="sesscard tester-welcome" id="tw"><p><b>Welkom in de Proefkeuken!</b><small>Je test een vroege versie van mijn kookapp. Na het starten krijg je <b>3 korte missies</b> die je alles laten zien. Tik op <b>Feedback</b> (rechtsboven) bij alles wat opvalt, onduidelijk is of beter kan.</small></p>
     <div class="field"><label for="tw-name">Hoe heet je? <span class="hint">(zodat Wes weet van wie de feedback is)</span></label><input id="tw-name" value="${esc(testerName())}" placeholder="Voornaam" autocomplete="given-name" maxlength="30"></div>
     <p class="tw-privacy">Je krijgt een persoonlijke test-ID. Wes ziet je voornaam, welke schermen en kookstappen je gebruikt, je sterren, notities en feedback, en foutmeldingen. Geen locatie of contacten. Alles weg? Laat het Wes weten.</p>
     <div class="row2"><button class="btn primary sm" type="button" id="tw-go">Akkoord, starten</button></div></div>`;
@@ -1610,7 +1654,7 @@ function bindTesterWelcome(){
     lsSet('kb-tester-name', name);
     if (!lsGet('kb-tester-id', '')) lsSet('kb-tester-id', makeTesterId(name));
     lsSet('kb-tester-welcomed', true);
-    track('aanmelding', { screen: 'startpagina' });
+    track('aanmelding', { screen: 'startpagina' }); obStart();
     flushEvents(); renderLibrary(); toast(`Welkom ${name}! Je test-ID is ${lsGet('kb-tester-id', '')}`);
   };
 }
@@ -1624,7 +1668,7 @@ async function checkTesterStatus(){
   } catch(e) { /* offline or endpoint unreachable: try again later */ }
 }
 function resetTester(){
-  for (const k of ['kb-tester-id', 'kb-tester-name', 'kb-tester-welcomed', 'kb-ev-queue', 'kb-sess-sent', 'kb-progress', 'kb-stats', 'kb-timers']) { try { localStorage.removeItem(k); } catch(e) {} }
+  for (const k of ['kb-tester-id', 'kb-tester-name', 'kb-tester-welcomed', 'kb-ev-queue', 'kb-sess-sent', 'kb-progress', 'kb-stats', 'kb-timers', 'kb-ob']) { try { localStorage.removeItem(k); } catch(e) {} }
   location.hash = ''; location.reload();
 }
 function showTesterReset(){
@@ -1654,6 +1698,183 @@ if (TESTER) {
   const fbBtn = document.getElementById('fb-btn'); if (fbBtn) { fbBtn.hidden = false; fbBtn.onclick = openFeedback; }
   const tb = document.getElementById('test-btn'); if (tb) tb.hidden = true;
   document.documentElement.classList.add('tester');
+}
+/* ---------- onboarding: missions, tips and the proefrit ----------
+   So a tester gets going from the link alone. All content lives in ONBOARDING; the engine below only plays it.
+     - Change a text, an order or a target: edit the table, nothing else.
+     - New tip: one line in tips with a new key. Every key is shown once per person, so new keys after an update
+       work as "wat is nieuw" for everyone who already saw the old ones.
+     - screen: library · recipe · kitchen · feedback · cook:-2 (vragen) · cook:-1 (klaarzetten) · cook:step · cook:end
+       target: CSS selector of what the tip points at (it waits until that element is on screen)
+       when(c): optional extra condition, c = { i (step), r (recipe), proef (in a proefrit) }
+   Active in the test version after the welcome card (consent), and for Wes as a demo (testmenu → Onboarding bekijken).
+   State: localStorage 'kb-ob' = { start, done:{mission:at}, seen:{tip:at}, off (no more tips), party (finale closed) }.
+   Measured with track(): 'missie' {m, n}, 'tip' {tip, a: ok | tik | uit}, 'proefrit_klaar' {via}, 'echt_gekookt';
+   cook events during a proefrit carry proef:1, so the dashboard keeps them apart from real cooking. */
+const ONBOARDING = {
+  realDays: 7,   // mission "kook echt": within this many days after starting (after that: "mag ook later")
+  missions: [
+    { id:'proefrit', title:'Maak een proefrit', cta:'Start proefrit',
+      text:'Klik één recept door tot het eindscherm. Je hoeft niet te koken: zo zie je hoe de kookmodus werkt. Telt niet mee.' },
+    { id:'feedback', title:'Laat weten wat je vindt', cta:'Feedback geven',
+      text:'Tik rechtsboven op Feedback, kies wat past en schrijf kort wat je opviel. Alles helpt, ook kleine dingen.', help:true },
+    { id:'koken', title:'Kook één recept echt', cta:'Kies een recept',
+      text:'Kies een recept dat je lekker lijkt en kook het met de kookmodus. Geef op het eindscherm sterren en zeg wat opviel.' }
+  ],
+  tips: [
+    { key:'recept-start',  screen:'recipe',   target:'#cook', text:'Hier start je de kookmodus: stap voor stap, met timers die meelopen.' },
+    { key:'kook-vragen',   screen:'cook:-2',  target:'#ck-next', text:'Eerst een paar vragen. Daarmee past de app de stappen aan jouw keuken aan. Daarna tik je op Verder.' },
+    { key:'kook-klaarzet', screen:'cook:-1',  target:'.ck-list li', text:'Vink af wat klaarstaat. Sneller: houd een vinkje even vast en veeg omlaag.' },
+    { key:'kook-stap',     screen:'cook:step', target:'#ck-next', text:'Klaar met deze stap? Tik op Volgende of veeg naar links. De balk bovenin laat zien waar je bent.' },
+    { key:'kook-timer',    screen:'cook:step', target:'.timer.big', text:'Tik om de timer te starten. Hij loopt door als je de app sluit en piept als hij klaar is.' },
+    { key:'kook-wachten',  screen:'cook:step', target:'.wait-card .wc-h', text:'Moet je wachten? Hier staat wat je ondertussen al kunt doen.' },
+    { key:'kook-ingr',     screen:'cook:step', target:'#ck-ing', when: c => c.i >= 1, text:'Alle ingrediënten met hoeveelheden zie je hier, op elk moment.' },
+    { key:'kook-eind',     screen:'cook:end', target:'.cook-done .stars', text:'Hoe was het? Geef sterren en tik aan wat opviel. Zo wordt het recept beter.' }
+  ],
+  // the recipe for the proefrit: a tested one if there is one, then the fewest steps (quickest to click through)
+  proefritRecipe: list => [...list].filter(r => (r.steps||[]).length).sort((a, b) => ((a.status||'concept') === 'concept') - ((b.status||'concept') === 'concept') || a.steps.length - b.steps.length)[0]
+};
+let pendingProefrit = false, obJust = null, obOpen = null;
+const obState = () => lsGet('kb-ob', {});
+const obSave = s => lsSet('kb-ob', s);
+const obDemo = () => !TESTER && lsGet('kb-ob-demo', false);
+const obActive = () => TESTER ? testerConsent() : obDemo();
+const proefTag = () => view.proefrit || view.proefEnd ? { proef: 1 } : {};
+const obDoneN = s => ONBOARDING.missions.filter(m => s.done?.[m.id]).length;
+function obStart(){ const s = obState(); if (!s.start) { s.start = new Date().toISOString(); obSave(s); } }
+// a mission is done: once, with a check, a buzz and a toast (after any toast that is still showing)
+function obComplete(id){
+  if (!obActive()) return;
+  const s = obState(); if (s.done?.[id]) return;
+  s.done = { ...(s.done||{}), [id]: new Date().toISOString() };
+  if (id === 'koken' && !s.done.proefrit) s.done.proefrit = s.done.koken;   // cooked for real: the proefrit is no longer needed
+  obSave(s); obJust = id;
+  const n = obDoneN(s), all = n >= ONBOARDING.missions.length;
+  track('missie', { m: id, n });
+  const t = document.getElementById('toast'), say = () => { toast(all ? 'Alle missies gehaald!' : `Missie gehaald · ${n} van ${ONBOARDING.missions.length}`); buzz([12, 50, 12]); };
+  if (t && !t.hidden) setTimeout(say, 1500); else say();
+}
+// the missions card on the home screen
+function obCard(){
+  if (!obActive() || !recipes.length) return '';
+  obStart();
+  const s = obState(), ms = ONBOARDING.missions, n = obDoneN(s);
+  if (n >= ms.length) return s.party ? '' : `<section class="obcard party" id="obcard" aria-label="Proefkeuken">
+      <div class="ob-confetti" aria-hidden="true">${obJust ? [...Array(18)].map((_, k) => `<i style="--k:${k}"></i>`).join('') : ''}</div>
+      <span class="ob-medal" aria-hidden="true">${ICON.check}</span>
+      <p><b>Alle missies gehaald!</b><small>Dank je${testerName() ? ', ' + esc(testerName()) : ''}. Kook gerust verder en blijf feedback geven: elke opmerking maakt de app beter.</small></p>
+      <div class="row2"><button class="btn primary sm" type="button" id="ob-party">Top, verbergen</button></div>
+    </section>`;
+  const cur = ms.find(m => !s.done?.[m.id]), open = obOpen && !s.done?.[obOpen] ? obOpen : cur.id;
+  const days = s.start ? ONBOARDING.realDays - Math.floor((Date.now() - Date.parse(s.start)) / 864e5) : ONBOARDING.realDays;
+  const row = (m, k) => {
+    const done = !!s.done?.[m.id], isOpen = !done && m.id === open, just = obJust === m.id;
+    const due = m.id === 'koken' && !done ? `<span class="ob-due">${days > 0 ? `nog ${plural(days, 'dag', 'dagen')}` : 'mag ook later'}</span>` : '';
+    return `<li class="ob-m ${done ? 'done' : ''} ${isOpen ? 'open' : ''} ${just ? 'just' : ''}">
+      <button class="ob-row" type="button" data-obm="${m.id}" aria-expanded="${isOpen}" ${done ? 'disabled' : ''}><span class="ob-ck" aria-hidden="true">${done ? ICON.check : k + 1}</span><b>${esc(m.title)}</b>${due}</button>
+      ${isOpen ? `<div class="ob-body"><p>${esc(m.text)}</p>
+        ${m.help ? `<dl class="ob-help">${FB_TYPES.map(t => `<div><dt>${esc(t)}</dt><dd>${esc(FB_HELP[t][0])}</dd></div>`).join('')}</dl>` : ''}
+        <button class="btn primary sm" type="button" data-obgo="${m.id}">${m.id === 'proefrit' ? ICON.pan : ''}${esc(m.cta)}</button></div>` : ''}
+    </li>`;
+  };
+  return `<section class="obcard" id="obcard" aria-label="Proefkeuken-missies">
+    <div class="ob-head"><span class="eyebrow">${obDemo() ? 'Demo · ' : ''}Proefkeuken</span><b>Jouw missies</b><span class="ob-count">${n} van ${ms.length}</span></div>
+    <div class="ob-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${ms.length}" aria-valuenow="${n}"><i style="width:${(n / ms.length * 100).toFixed(0)}%"></i></div>
+    <ol class="ob-list">${ms.map(row).join('')}</ol>
+    ${obDemo() ? `<button class="btn ghost sm ob-stop" type="button" id="ob-demo-stop">Demo stoppen</button>` : ''}
+  </section>`;
+}
+function bindObCard(){
+  const c = document.getElementById('obcard'); if (!c) return;
+  obJust = null;   // the check pop and the confetti play once
+  c.querySelectorAll('[data-obm]').forEach(b => b.onclick = () => { obOpen = b.dataset.obm; renderLibrary(); });
+  c.querySelectorAll('[data-obgo]').forEach(b => b.onclick = () => obGo(b.dataset.obgo));
+  const p = document.getElementById('ob-party'); if (p) p.onclick = () => { const s = obState(); s.party = true; obSave(s); renderLibrary(); };
+  const d = document.getElementById('ob-demo-stop'); if (d) d.onclick = () => { lsSet('kb-ob-demo', false); obHideTip(); renderLibrary(); toast('Demo gestopt'); };
+}
+function obGo(id){
+  if (id === 'proefrit') {
+    const r = ONBOARDING.proefritRecipe(recipes.filter(x => !openSessions().some(o => o.r.id === x.id))) || ONBOARDING.proefritRecipe(recipes);
+    if (!r) return;
+    pendingProefrit = true; track('proefrit', { rid: r.id }); go('recept-' + r.id);
+  }
+  else if (id === 'feedback') openFeedback();
+  else document.querySelector('.count')?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+}
+// cook mode: the note on the first screen of a proefrit, and its end screen
+function proefNote(){ return view.proefrit ? `<p class="ob-proef">${ICON.check}<span><b>Proefrit:</b> klik gerust alles door, je hoeft niet echt te koken. Telt niet mee.</span></p>` : ''; }
+function proefEndHtml(r){
+  const via = view.proefEnd, s = obState(), next = ONBOARDING.missions.find(m => !s.done?.[m.id]);
+  return `<div class="ck-left cook-done ob-end">
+      <span class="ob-medal" aria-hidden="true">${ICON.check}</span>
+      <span class="eyebrow">Proefrit · alle ${(r.steps||[]).length} stappen gezien</span>
+      <h2>${via === 'proefrit' ? 'Proefrit gehaald!' : 'Dat ging snel!'}</h2>
+      <p class="cook-sub">${via === 'proefrit' ? 'Nu weet je hoe de kookmodus werkt. Deze rit telt niet mee in je keuken.' : 'Je tikte in een paar minuten door alle stappen. Dat telt als proefrit, niet als kookbeurt.'}</p>
+      ${via === 'snel' ? `<button class="btn" type="button" id="ck-real">${ICON.pan}Ik heb echt gekookt</button>` : ''}
+    </div>
+    <div class="ck-right cook-next">
+      ${next ? promptCard({ title:'Volgende missie:', text:esc(next.title.toLowerCase()) + '.',
+          actions: next.id === 'feedback' ? [{ label:'Feedback geven', kind:'primary', id:'ck-ob-fb' }, { label:'Naar de missies', kind:'ghost', id:'ck-ob-home' }] : [{ label:'Naar de missies', kind:'primary', id:'ck-ob-home' }] })
+        : obActive() ? promptCard({ title:'Alle missies gehaald.', text:'Dank je wel!', actions:[{ label:'Naar de recepten', kind:'primary', id:'ck-ob-home' }] }) : ''}
+    </div>`;
+}
+/* tips: one small bubble at a time, next to what it explains; it follows scrolling and waits until its element is on
+   screen. "Begrepen" (or tapping the element itself) marks it seen; "Geen tips meer" turns all tips off. */
+let obTipEl = null, obTipKey = null, obTipTarget = null;
+function obScreen(){
+  if (document.getElementById('fb-root')) return 'feedback';
+  if (view.cook) { const r = currentRecipe(), n = (r?.steps||[]).length, i = view.cur; return i === -2 ? 'cook:-2' : i === -1 ? 'cook:-1' : i >= n ? 'cook:end' : 'cook:step'; }
+  const h = location.hash.slice(1); return h.startsWith('recept-') ? 'recipe' : h === 'keuken' ? 'kitchen' : h || 'library';
+}
+const obVisible = el => { const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
+function obTips(){ if (!obActive() && !obTipEl) return; cancelAnimationFrame(obTips.raf); obTips.raf = requestAnimationFrame(obShowTip); }
+function obShowTip(){
+  const s = obState();
+  if (!obActive() || s.off || sheetOpen || menuOpen || moreOpen || view.leaveAsk || document.getElementById('tr-root')) return obHideTip();
+  const scr = obScreen(), c = { i: view.cur, r: currentRecipe(), proef: !!view.proefrit };
+  let target = null;
+  const t = ONBOARDING.tips.find(t => t.screen === scr && !s.seen?.[t.key] && (!t.when || t.when(c)) && (target = [...document.querySelectorAll(t.target)].find(obVisible)));
+  if (!t) return obHideTip();
+  const fresh = obTipKey !== t.key;
+  if (!obTipEl) { obTipEl = document.createElement('div'); obTipEl.className = 'obtip'; obTipEl.setAttribute('role', 'note'); document.body.appendChild(obTipEl); }
+  if (fresh || !obTipEl.querySelector('#obt-ok')) {
+    obTipEl.innerHTML = `<i class="obtip-arrow" aria-hidden="true"></i><p><span class="eyebrow">Tip</span>${esc(t.text)}</p>
+      <div class="row2"><button class="btn primary sm" type="button" id="obt-ok">Begrepen</button><button class="btn ghost sm" type="button" id="obt-off">Geen tips meer</button></div>`;
+    obTipEl.querySelector('#obt-ok').onclick = () => obSeen('ok');
+    obTipEl.querySelector('#obt-off').onclick = () => { const st = obState(); st.off = true; obSave(st); track('tip', { tip: obTipKey, a: 'uit' }); obHideTip(); toast('Tips staan uit. Je missies blijven staan.'); };
+    obTipEl.classList.remove('in'); void obTipEl.offsetWidth; obTipEl.classList.add('in');
+  }
+  obTipKey = t.key;
+  if (obTipTarget !== target) { obTipTarget?.classList.remove('ob-spot'); obTipTarget = target; target.classList.add('ob-spot'); }
+  if (fresh) reveal(target);
+  obPlace();
+}
+function obSeen(how){
+  if (!obTipKey) return;
+  const s = obState(); s.seen = { ...(s.seen||{}), [obTipKey]: new Date().toISOString() }; obSave(s);
+  track('tip', { tip: obTipKey, a: how }); obHideTip(); obTips();
+}
+function obHideTip(){ obTipTarget?.classList.remove('ob-spot'); obTipTarget = null; obTipKey = null; obTipEl?.remove(); obTipEl = null; }
+// below the element when it fits, otherwise above; the arrow points at its middle
+function obPlace(){
+  if (!obTipEl || !obTipTarget) return;
+  if (!obTipTarget.isConnected) return obTips();
+  const b = obTipTarget.getBoundingClientRect(), w = Math.min(320, innerWidth - 24), h = obTipEl.offsetHeight;
+  const top0 = (document.querySelector('.tbar:not([hidden])')?.getBoundingClientRect().bottom || 0) + 8;
+  const below = b.bottom + 12 + h <= innerHeight - 8, y = below ? b.bottom + 12 : Math.max(top0, b.top - 12 - h);
+  const x = Math.max(12, Math.min(innerWidth - w - 12, b.left + b.width / 2 - w / 2));
+  Object.assign(obTipEl.style, { width: w + 'px', left: x + 'px', top: y + 'px' });
+  obTipEl.classList.toggle('above', !below);
+  obTipEl.style.setProperty('--ax', Math.max(18, Math.min(w - 18, b.left + b.width / 2 - x)) + 'px');
+  obTipEl.hidden = b.bottom < top0 || b.top > innerHeight;   // scrolled out of view: hide until it is back
+}
+document.addEventListener('scroll', () => { if (obTipEl) requestAnimationFrame(obPlace); }, true);
+window.addEventListener('resize', () => { if (obTipEl) requestAnimationFrame(obPlace); });
+// doing what the tip says counts as "seen"
+document.addEventListener('click', e => { if (obTipTarget && obTipTarget.contains(e.target)) obSeen('tik'); }, true);
+// test version: ?onboarding=reset starts the missions and tips over (the tester ID and cooking history stay)
+if (TESTER && new URLSearchParams(location.search).get('onboarding') === 'reset') {
+  try { localStorage.removeItem('kb-ob'); const qs = new URLSearchParams(location.search); qs.delete('onboarding'); history.replaceState(null, '', location.pathname + (qs.toString() ? '?' + qs : '') + location.hash); } catch(e) {}
 }
 /* ---------- hold and swipe to tick several items ---------- */
 let dragChecking = false, suppressClick = false;

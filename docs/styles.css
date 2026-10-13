@@ -1,6 +1,6 @@
 /* CSS-kaart — zoek op "---------- <naam>":
    thema-tokens (licht/donker) → bovenbalk → startpagina → receptpagina → kookmodus → gedeeld → keuken
-   → bewerkpagina → tikfeedback → testmenu → beweging.
+   → bewerkpagina → tikfeedback → testmenu → onboarding → beweging.
    Regel: één definitie per selector. Een nieuwe regel komt in het hoofdstuk van zijn scherm; overschrijf je
    bewust een eerdere regel, zet er dan een korte uitleg boven. Controleer met harness.py --compare. */
 /* Layout: sticky top bar; library = search + tag chips + card grid; recipe = hero, then ingredients (sticky on laptop) beside numbered steps */
@@ -585,6 +585,59 @@ label.btn{cursor:pointer}
 .tm-info b{color:var(--fg)}
 .testtag{font-family:var(--f-mono);font-size:.7rem;background:var(--pop);color:#1c1606;border-radius:4px;padding:1px 5px;letter-spacing:.06em}
 @media (max-width:420px){#test-btn,#stats-btn{width:36px;height:36px}}
+/* ---------- onboarding: missiekaart, proefrit, tips (testversie; demo via testmenu) ---------- */
+.obcard{display:grid;gap:10px;padding:14px 16px;border-radius:16px;background:var(--surface);border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));box-shadow:var(--shadow)}
+.ob-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ob-head b{font-family:var(--f-display);font-size:1.08rem}
+.ob-count{margin-left:auto;font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
+.ob-bar{height:6px;border-radius:99px;background:var(--sunk);overflow:hidden}
+.ob-bar i{display:block;height:100%;border-radius:inherit;background:var(--accent);transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.ob-list{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.ob-row{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;padding:6px 0;text-align:left;cursor:pointer;font-size:.95rem}
+.ob-row:disabled{cursor:default;color:inherit}
+.ob-ck{flex:none;width:26px;height:26px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
+.ob-ck svg{width:15px;height:15px}
+.ob-m.open .ob-ck{border-color:var(--accent);color:var(--accent)}
+.ob-m.done .ob-ck{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.ob-m.done b{color:var(--muted);font-weight:500;text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--muted) 60%,transparent)}
+.ob-due{margin-left:auto;flex:none;font-family:var(--f-mono);font-size:.72rem;color:var(--muted);background:var(--sunk);padding:2px 8px;border-radius:99px}
+.ob-body{display:grid;gap:10px;justify-items:start;padding:0 0 6px 36px}
+.ob-body p{margin:0;color:var(--muted);font-size:.9rem;line-height:1.45}
+.ob-help{margin:0;display:grid;gap:6px;font-size:.86rem;line-height:1.35}
+.ob-help div{display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px}
+.ob-help dt{font-weight:600}
+.ob-help dd{margin:0;color:var(--muted)}
+.ob-stop{justify-self:start;margin-top:-4px}
+.obcard.party{position:relative;overflow:hidden;grid-template-columns:auto minmax(0,1fr);align-items:center;background:var(--accent-soft)}
+.obcard.party p{margin:0}
+.obcard.party small{display:block;color:var(--muted);font-size:.86rem;line-height:1.4}
+.obcard.party .row2{grid-column:1/-1}
+.ob-medal{width:44px;height:44px;border-radius:50%;background:var(--accent);color:var(--accent-fg);display:grid;place-items:center}
+.ob-medal svg{width:24px;height:24px}
+.ob-confetti{position:absolute;inset:0;pointer-events:none}
+.ob-confetti i{position:absolute;top:-12px;left:calc(var(--k) * 5.4% + 2%);width:7px;height:11px;border-radius:2px;background:var(--accent);opacity:0;animation:obfall 1.7s calc(var(--k) * 45ms) ease-in forwards}
+.ob-confetti i:nth-child(3n+2){background:var(--pop)}
+.ob-confetti i:nth-child(3n){background:var(--danger);width:6px;height:6px;border-radius:50%}
+@keyframes obfall{0%{opacity:1;transform:translateY(0) rotate(0)}100%{opacity:0;transform:translateY(170px) rotate(540deg)}}
+@keyframes obpop{0%{transform:scale(.4)}60%{transform:scale(1.15)}100%{transform:none}}
+.ob-m.just .ob-ck,.obcard.party .ob-medal,.ob-end .ob-medal{animation:obpop .4s ease-out}
+.ob-proef{display:flex;gap:8px;align-items:flex-start;margin:4px 0 0;padding:9px 12px;border-radius:12px;background:var(--pop-soft);font-size:.9rem;line-height:1.4}
+.ob-proef svg{flex:none;width:18px;height:18px;margin-top:1px;color:var(--pop)}
+.testtag.proef{background:var(--accent);color:var(--accent-fg)}
+.ob-end .ob-medal{width:56px;height:56px}
+.ob-end .ob-medal svg{width:30px;height:30px}
+.ob-end #ck-real{justify-self:start}
+.fb-help{margin:-4px 0 0;font-size:.86rem;line-height:1.4;color:var(--muted)}
+.obtip{position:fixed;z-index:55;display:grid;gap:10px;padding:12px 14px;border-radius:14px;background:var(--fg);color:var(--bg);box-shadow:0 12px 32px rgb(0 0 0/.3);font-size:.92rem;line-height:1.4}
+.obtip p{margin:0}
+.obtip .eyebrow{display:block;margin-bottom:2px;color:inherit;opacity:.72}
+.obtip .btn.ghost{color:inherit}
+.obtip-arrow{position:absolute;left:var(--ax,50%);top:-6px;width:12px;height:12px;border-radius:2px;background:inherit;transform:translateX(-50%) rotate(45deg)}
+.obtip.above .obtip-arrow{top:auto;bottom:-6px}
+@keyframes obtipin{from{opacity:0;transform:translateY(6px)}}
+.obtip.in{animation:obtipin .22s ease-out}
+@keyframes obspot{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--pop) 60%,transparent)}100%{box-shadow:0 0 0 14px transparent}}
+.ob-spot{outline:3px solid var(--pop);outline-offset:3px;animation:obspot 1.4s ease-out 3}
 /* ---------- beweging: vinkjes, stappenbalk, timerpuls, sterren (respecteert reduced-motion) ---------- */
 @keyframes ckpop{0%{transform:scale(.6)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
 /* the pop plays only on what you just tapped (.tapped), never again when a screen redraws */

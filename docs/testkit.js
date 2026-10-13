@@ -15,6 +15,6 @@
       async get() { const d = path === 'recipes' ? RECIPES.find(r => r.id === id) : null; return { exists: !!d, id, data: () => d && JSON.parse(JSON.stringify(d)) }; } }; },
     async add() { return readOnly(); }
   });
-  window.__CBTB_TESTER__ = {"endpoint": "https://script.google.com/macros/s/AKfycbxWq2ax8NTmCUTNGOrUrMg3YHiI-1NRpRYA0ORVfzdv8u4JcNmHoCliafmnvCydd3rDZQ/exec", "build": "2026-10-13 16:12"};
+  window.__CBTB_TESTER__ = {"endpoint": "https://script.google.com/macros/s/AKfycbxWq2ax8NTmCUTNGOrUrMg3YHiI-1NRpRYA0ORVfzdv8u4JcNmHoCliafmnvCydd3rDZQ/exec", "build": "2026-10-13 17:15"};
   window.claude = { use: async k => k === 'db' ? { collection: coll } : k === 'user' ? { can: async () => false, id: async () => 'local', isOwner: async () => false, canEdit: async () => false } : null };
 })();

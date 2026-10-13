@@ -21,6 +21,24 @@ telefoon tester ──(events, feedback, fouten)──▶ Apps Script ──▶ 
   tabblad Instellingen: B9 (urgent, uren), B10 (overig, uren; 0 = direct), B8 mail: reserve / altijd / nee (zelfde bundels en tijden).
   Eigen dagbudget 60 pushberichten. Optioneel een gratis ntfy.sh-token in B7 (limiet per account i.p.v. gedeeld IP). Diagnose: `testMelding`.
 
+## Onboarding (sinds v49)
+
+Testers krijgen na "Akkoord, starten" drie missies op de startpagina, zodat Wes niets hoeft uit te leggen:
+
+1. **Proefrit**: één recept doorklikken tot het eindscherm (label PROEFRIT, telt nergens mee).
+2. **Feedback geven**: met uitleg van de vier soorten (Snap ik niet, Werkt niet, Mooi, Idee).
+3. **Eén recept echt koken** binnen 7 dagen.
+
+Plus losse tips op het moment zelf (één tegelijk, "Begrepen" of "Geen tips meer"). **Vangnet:** wie via de gewone startknop
+sneller dan de kooktijd-grens (5 min of 40% van de recepttijd) naar het eindscherm tikt, krijgt "Dat ging snel": telt als
+proefrit, met de knop "Ik heb echt gekookt". Alles staat in één tabel `ONBOARDING` in `app.js` (hoofdstuk 12c): teksten,
+volgorde, scherm en doel-element. Nieuwe tip = één regel met een nieuwe sleutel (werkt ook als "wat is nieuw").
+
+- Opnieuw beginnen op een telefoon: `…/?onboarding=reset` (test-ID en kookgeschiedenis blijven).
+- Zelf bekijken in het artifact: Testmenu → *Onboarding bekijken* (demo, stoppen via de missiekaart).
+- Dashboard: kaart **Onboarding** (missies per tester), proefritten apart van "keer gekookt", missies in de tijdlijn.
+  Alles komt binnen als gewone events (`missie`, `tip`, `proefrit_klaar`, kook-events met `proef:1`): geen nieuwe scriptversie nodig.
+
 ## Mappen
 
 | Map | Wat |
@@ -28,7 +46,7 @@ telefoon tester ──(events, feedback, fouten)──▶ Apps Script ──▶ 
 | `docs/` | De website (GitHub Pages). Wordt gebouwd, niet met de hand aanpassen. |
 | `dashboard/` | Bron van het dashboard (+ `vendor/qrcode.js`, MIT). |
 | `apps-script/Code.gs` | Het script achter de Google Sheet. Bevat geen geheimen. |
-| `tools/` | `build_testversion.py` (bouwen) en `test_testversion.py` (rooktest). |
+| `tools/` | `build_testversion.py` (bouwen) en `test_testversion.py` (rooktest, 164 checks incl. onboarding). |
 | `config/tester.json` | `{"endpoint": "<Apps Script /exec-URL>"}` |
 
 ## Eenmalig instellen

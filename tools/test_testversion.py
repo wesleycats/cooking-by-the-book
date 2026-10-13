@@ -3,7 +3,8 @@
   python3 tools/test_testversion.py DIST   (build DIST with a fake endpoint: https://script.google.com/macros/s/TEST/exec)
 
 Checks: invite group from ?g=, nothing sent before consent, welcome → tester ID, events for opening/cooking steps,
-feedback with context, automatic error capture, queue empties; dashboard (demo data) renders every tab without errors.
+feedback with context, automatic error capture, queue empties; onboarding (missions, tips, proefrit, quick-tap safety net,
+finale, reset); dashboard (demo data) renders every tab without errors, incl. the onboarding funnel.
 """
 import asyncio, json, os, re, sys, subprocess, time, urllib.parse
 from playwright.async_api import async_playwright
@@ -59,6 +60,11 @@ async def main():
         fo = [i for i in items() if i['kind'] == 'fout']
         ok('JS-fout automatisch gemeld', fo and 'testfout uit rooktest' in fo[-1]['message'] and fo[-1]['screen'].startswith('kookmodus'), fo[-1:])
         for _ in range(9): await pg.evaluate("document.querySelector('#ck-next')?.click()"); await pg.wait_for_timeout(80)
+        ok('snel doorgetikt → telt als proefrit (vangnet)', await pg.locator('#ck-real').count() == 1 and await pg.evaluate("JSON.parse(localStorage.getItem('kb-stats')||'{\"sessions\":[]}').sessions.length") == 0)
+        ok('vangnet: geen "klaar" maar proefrit_klaar via snel', not any(i['kind'] == 'klaar' for i in items() + await pg.evaluate("JSON.parse(localStorage.getItem('kb-ev-queue')||'[]')")) and any(i['kind'] == 'proefrit_klaar' and i.get('via') == 'snel' for i in items() + await pg.evaluate("JSON.parse(localStorage.getItem('kb-ev-queue')||'[]')")))
+        await pg.screenshot(path=os.path.join(SHOTS, 'vangnet.png'))
+        await pg.click('#ck-real'); await pg.wait_for_timeout(300)
+        ok('"Ik heb echt gekookt" telt de sessie alsnog', await pg.evaluate("JSON.parse(localStorage.getItem('kb-stats')).sessions.length") == 1)
         await pg.click('[data-star="4"]'); await pg.wait_for_timeout(300)
         await pg.click('#ck-close'); await pg.wait_for_timeout(300)
         await pg.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
@@ -95,6 +101,85 @@ async def main():
         ok('na opnieuw aanmelden: schone lei met welkomstkaart', await pg.locator('#tw').count() == 1 and await pg.evaluate("localStorage.getItem('kb-tester-id') === null && localStorage.getItem('kb-stats') === null"))
         server['status'] = 'active'
         await ctx.close()
+        # ---------- onboarding: missies, tips, proefrit, feedback, echt koken, finale ----------
+        for theme in ('light', 'dark'):
+            ctx = await b.new_context(viewport={'width': 390, 'height': 844}, color_scheme=theme, has_touch=True)
+            pg = await ctx.new_page(); errs = []; posts = []
+            pg.on('pageerror', lambda e: errs.append(str(e)))
+            await ctx.route('https://script.google.com/**', grab)
+            await ctx.route('https://fonts.googleapis.com/**', lambda r: r.abort())
+            q = lambda: pg.evaluate("JSON.parse(localStorage.getItem('kb-ev-queue')||'[]')")
+            async def evs(): return items() + await q()
+            await pg.goto(BASE + '/index.html?g=familie'); await pg.wait_for_timeout(1500)
+            ok(f'[{theme}] onboarding: welkomstkaart noemt de missies', '3 korte missies' in await pg.inner_text('#tw'))
+            ok(f'[{theme}] onboarding: vóór akkoord geen missies of tips', await pg.locator('#obcard').count() == 0 and await pg.locator('.obtip').count() == 0)
+            await pg.fill('#tw-name', 'Joost'); await pg.click('#tw-go'); await pg.wait_for_timeout(700)
+            ok(f'[{theme}] onboarding: missiekaart met 3 missies, 0 van 3', await pg.locator('#obcard .ob-m').count() == 3 and '0 van 3' in await pg.inner_text('.ob-count'))
+            ok(f'[{theme}] onboarding: eerste missie open met knop', await pg.locator('.ob-m.open [data-obgo="proefrit"]').count() == 1)
+            ok(f'[{theme}] onboarding: echt koken heeft een termijn', 'nog 7 dagen' in await pg.inner_text('#obcard'))
+            await pg.click('[data-obm="feedback"]'); await pg.wait_for_timeout(200)
+            ok(f'[{theme}] onboarding: feedbackmissie legt alle 4 soorten uit', await pg.locator('.ob-help div').count() == 4)
+            await pg.screenshot(path=os.path.join(SHOTS, f'{theme}-ob-missies.png'))
+            await pg.click('[data-obm="proefrit"]'); await pg.wait_for_timeout(200)
+            await pg.click('[data-obgo="proefrit"]'); await pg.wait_for_timeout(800)
+            ok(f'[{theme}] proefrit: kookmodus met PROEFRIT-label en uitleg', await pg.locator('.cook .testtag.proef').count() == 1 and await pg.locator('.ob-proef').count() == 1)
+            ok(f'[{theme}] proefrit: kiest een getest recept', 'Lichte pesto' in await pg.inner_text('.cook-top .ttl'))
+            ok(f'[{theme}] tip: eerste tip bij de vragen, naast Verder', await pg.locator('.obtip').count() == 1 and await pg.locator('#ck-next.ob-spot').count() == 1)
+            ok(f'[{theme}] tip: valt binnen het scherm', await pg.evaluate("(() => { const b = document.querySelector('.obtip').getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth && b.top >= 0 && b.bottom <= innerHeight; })()"))
+            await pg.screenshot(path=os.path.join(SHOTS, f'{theme}-ob-tip.png'))
+            await pg.click('#obt-ok'); await pg.wait_for_timeout(300)
+            ok(f'[{theme}] tip: Begrepen → weg en onthouden', await pg.locator('.obtip').count() == 0 and await pg.evaluate("!!JSON.parse(localStorage.getItem('kb-ob')).seen['kook-vragen']"))
+            await pg.click('#ck-next'); await pg.wait_for_timeout(400)
+            ok(f'[{theme}] tip: klaarzetten wijst naar het eerste vinkje', await pg.locator('.obtip').count() == 1 and await pg.locator('.ck-list li.ob-spot').count() == 1)
+            await pg.click('#ck-next'); await pg.wait_for_timeout(400)
+            ok(f'[{theme}] tip: stap 1 legt Volgende uit', await pg.locator('#ck-next.ob-spot').count() == 1)
+            await pg.click('#ck-next'); await pg.wait_for_timeout(300)
+            ok(f'[{theme}] tip: tik op Volgende zelf telt als gezien', any(i['kind'] == 'tip' and i.get('tip') == 'kook-stap' and i.get('a') == 'tik' for i in await evs()))
+            for _ in range(12):
+                if await pg.locator('.cook-done').count(): break
+                await pg.evaluate("document.querySelector('#ck-next')?.click()"); await pg.wait_for_timeout(150)
+            ok(f'[{theme}] proefrit: eindscherm "Proefrit gehaald!" zonder sterren', 'Proefrit gehaald' in await pg.inner_text('.cook-done') and await pg.locator('.cook .stars').count() == 0)
+            ok(f'[{theme}] proefrit: telt niet mee (geen sessie, geen "× gekookt")', await pg.evaluate("JSON.parse(localStorage.getItem('kb-stats')||'{\"sessions\":[]}').sessions.length") == 0 and not await pg.evaluate("Object.values(JSON.parse(localStorage.getItem('kb-progress')||'{}')).some(p => p.cooked)"))
+            e = await evs()
+            ok(f'[{theme}] proefrit: kook-events gelabeld met proef', any(i['kind'] == 'kook_start' and i.get('proef') == 1 for i in e) and all(i.get('proef') == 1 for i in e if i['kind'] == 'stap'))
+            ok(f'[{theme}] proefrit: missie gemeten', any(i['kind'] == 'missie' and i.get('m') == 'proefrit' for i in e) and any(i['kind'] == 'proefrit_klaar' and i.get('via') == 'proefrit' for i in e))
+            await pg.screenshot(path=os.path.join(SHOTS, f'{theme}-ob-proefrit-klaar.png'))
+            await pg.click('#ck-ob-fb'); await pg.wait_for_timeout(400)
+            ok(f'[{theme}] feedback: uitleg bij de gekozen soort', 'Je weet niet' in await pg.inner_text('#fb-help'))
+            await pg.click('[data-fbt="Werkt niet"]'); await pg.wait_for_timeout(100)
+            ok(f'[{theme}] feedback: uitleg en voorbeeld wisselen mee', 'melding' in await pg.inner_text('#fb-help') and 'timer' in await pg.get_attribute('#fb-msg', 'placeholder'))
+            await pg.click('[data-fbt="Mooi"]'); await pg.fill('#fb-msg', 'Duidelijke stappen'); await pg.click('#fb-send'); await pg.wait_for_timeout(500)
+            ok(f'[{theme}] feedbackmissie gehaald', await pg.evaluate("Object.keys(JSON.parse(localStorage.getItem('kb-ob')).done).length") == 2)
+            await pg.click('#ck-ob-home'); await pg.wait_for_timeout(600)
+            ok(f'[{theme}] missiekaart: 2 van 3, echt koken staat open', '2 van 3' in await pg.inner_text('.ob-count') and await pg.locator('.ob-m.open [data-obgo="koken"]').count() == 1)
+            # echt koken: op de normale manier gestart, eindscherm, "Ik heb echt gekookt"
+            await pg.locator('.card').first.click(); await pg.wait_for_timeout(500)
+            await pg.click('#cook'); await pg.wait_for_timeout(300)
+            for _ in range(14):
+                if await pg.locator('.cook-done').count(): break
+                await pg.evaluate("document.querySelector('#ck-next')?.click()"); await pg.wait_for_timeout(120)
+            ok(f'[{theme}] vangnet: "Dat ging snel!"', 'Dat ging snel' in await pg.inner_text('.cook-done'))
+            await pg.click('#ck-real'); await pg.wait_for_timeout(1800)
+            ok(f'[{theme}] echt gekookt: sterren en tip bij de sterren', await pg.locator('.cook .stars').count() == 1 and await pg.locator('.stars.ob-spot').count() == 1)
+            ok(f'[{theme}] alle missies gehaald', await pg.evaluate("Object.keys(JSON.parse(localStorage.getItem('kb-ob')).done).length") == 3)
+            await pg.click('#ck-end'); await pg.wait_for_timeout(300); await pg.click('#home-btn'); await pg.wait_for_timeout(600)
+            ok(f'[{theme}] finale: feestkaart met confetti', await pg.locator('#obcard.party .ob-confetti i').count() > 5)
+            await pg.screenshot(path=os.path.join(SHOTS, f'{theme}-ob-finale.png'))
+            await pg.click('#ob-party'); await pg.wait_for_timeout(300)
+            ok(f'[{theme}] finale: verbergen → kaart weg, blijft weg na herladen', await pg.locator('#obcard').count() == 0)
+            await pg.reload(); await pg.wait_for_timeout(1200)
+            ok(f'[{theme}] na herladen: geen missiekaart, geen tip', await pg.locator('#obcard').count() == 0 and await pg.locator('.obtip').count() == 0)
+            # geen tips meer, en opnieuw beginnen via ?onboarding=reset
+            await pg.goto(BASE + '/index.html?onboarding=reset'); await pg.wait_for_timeout(1200)
+            ok(f'[{theme}] ?onboarding=reset: missies weer op 0, test-ID blijft', '0 van 3' in await pg.inner_text('.ob-count') and bool(await pg.evaluate("JSON.parse(localStorage.getItem('kb-tester-id'))")) and 'onboarding' not in pg.url)
+            await pg.locator('.card').first.click(); await pg.wait_for_timeout(600)
+            ok(f'[{theme}] tip op receptpagina bij de startknop', await pg.locator('#cook.ob-spot').count() == 1)
+            ok(f'[{theme}] startknop blijft in beeld met tip', await pg.evaluate("document.getElementById('cook').getBoundingClientRect().bottom <= innerHeight"))
+            await pg.click('#obt-off'); await pg.wait_for_timeout(300)
+            await pg.click('#cook'); await pg.wait_for_timeout(500)
+            ok(f'[{theme}] "Geen tips meer": daarna geen tips', await pg.locator('.obtip').count() == 0 and await pg.evaluate("JSON.parse(localStorage.getItem('kb-ob')).off === true"))
+            ok(f'[{theme}] onboarding: geen JS-fouten', not errs, errs[:3])
+            await ctx.close()
         # ---------- dashboard met voorbeelddata ----------
         for theme in ('light', 'dark'):
             ctx = await b.new_context(viewport={'width': 390, 'height': 844}, color_scheme=theme)
@@ -104,11 +189,14 @@ async def main():
             await pg.goto(BASE + '/dashboard.html?demo'); await pg.wait_for_timeout(900)
             await pg.screenshot(path=os.path.join(SHOTS, f'{theme}-dash-overzicht.png'), full_page=True)
             ok(f'[{theme}] dashboard: kerncijfers', await pg.locator('.kpi').count() == 4)
+            ok(f'[{theme}] dashboard: onboarding-trechter met 4 stappen', await pg.locator('.obfunnel .of-row').count() == 4)
+            ok(f'[{theme}] dashboard: proefritten apart van echte kookbeurten', 'proefrit' in (await pg.inner_text('.kpis')).lower())
             await pg.click('[data-tab="testers"]'); await pg.wait_for_timeout(200)
             ok(f'[{theme}] dashboard: testers', await pg.locator('.tester').count() == 5)
             await pg.screenshot(path=os.path.join(SHOTS, f'{theme}-dash-testers.png'), full_page=True)
             await pg.click('.tester'); await pg.wait_for_timeout(200)
             ok(f'[{theme}] dashboard: tester-tijdlijn', await pg.locator('.tl li.e').count() > 3)
+            ok(f'[{theme}] dashboard: missies in de tijdlijn', 'Missie gehaald' in await pg.inner_text('.tl'))
             await pg.screenshot(path=os.path.join(SHOTS, f'{theme}-dash-tester.png'), full_page=True)
             # verwijderen: één tester (alleen testdata), meerdere (tester en alles), ongedaan maken, iedereen met VERWIJDER
             await pg.click('#t-del'); await pg.wait_for_timeout(150)

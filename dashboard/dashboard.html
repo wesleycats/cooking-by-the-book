@@ -182,6 +182,7 @@ section.pane{display:grid;gap:16px}
 .fr .v{font:500 .78rem var(--f-mono);text-align:right}
 .fr.drop .l{color:var(--danger);font-weight:600}
 .fr.drop .v{color:var(--danger)}
+.tl li.e.good span{color:var(--accent);font-weight:600}
 .stats3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
 .stats3 div{background:var(--sunk);border-radius:10px;padding:8px 10px}
 .stats3 b{display:block;font:800 1.15rem var(--f-display)}
@@ -281,6 +282,11 @@ const fmtDay = iso => new Date(iso).toLocaleDateString('nl-NL', { weekday:'short
 const initial = n => (n || '?').trim().charAt(0).toUpperCase();
 const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 const nl1 = x => x == null ? '–' : x.toFixed(1).replace('.', ',');
+// extra event fields (proef, m, tip, a, via) arrive as JSON in the Details column
+const det = e => { if (e.details && typeof e.details === 'object') return e.details; try { return JSON.parse(e.details || '{}') || {}; } catch (x) { return {}; } };
+const isProef = e => !!det(e).proef;   // clicked through during a proefrit (onboarding): not real cooking
+// onboarding missions, in order (same ids as ONBOARDING.missions in the app)
+const MISSIONS = [['proefrit', 'Proefrit'], ['feedback', 'Feedback gegeven'], ['koken', 'Echt gekookt']];
 
 let data = null, recipes = [], view = { tester: null, ff: 'open', ft: '' }, loading = false;
 
@@ -344,11 +350,16 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 /* ---------- afgeleide cijfers ---------- */
 function derive(){
   const ev = data.events || [], ts = data.testers || [], fb = data.feedback || [], er = data.fouten || [], ss = data.sessies || [];
-  const byT = Object.fromEntries(ts.map(t => [t.id, { ...t, days: new Set(String(t.dayList || '').split(',').map(x => x.trim()).filter(Boolean).map(x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : isNaN(new Date(x)) ? '' : dayKey(x)).filter(Boolean)), started: 0, finished: 0, fb: 0, bugs: 0, stars: [] }]));
-  for (const e of ev) { const t = byT[e.tid]; if (!t) continue; t.days.add(dayKey(e.at)); if (e.kind === 'kook_start') t.started++; }
-  for (const s of ss) { const t = byT[s.tid]; if (!t) continue; t.finished++; if (s.rating !== '' && s.rating != null) t.stars.push(+s.rating); }
-  for (const f of fb) { const t = byT[f.tid]; if (t) { t.fb++; if (f.type === 'Werkt niet') t.bugs++; } }
+  const byT = Object.fromEntries(ts.map(t => [t.id, { ...t, days: new Set(String(t.dayList || '').split(',').map(x => x.trim()).filter(Boolean).map(x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : isNaN(new Date(x)) ? '' : dayKey(x)).filter(Boolean)), started: 0, finished: 0, proef: 0, fb: 0, bugs: 0, stars: [], missions: new Set(), tipsOff: false }]));
+  for (const e of ev) { const t = byT[e.tid]; if (!t) continue; t.days.add(dayKey(e.at));
+    if (e.kind === 'kook_start' && !isProef(e)) t.started++;
+    if (e.kind === 'proefrit_klaar') { t.proef++; t.missions.add('proefrit'); }
+    if (e.kind === 'missie') t.missions.add(det(e).m);
+    if (e.kind === 'tip' && det(e).a === 'uit') t.tipsOff = true; }
+  for (const s of ss) { const t = byT[s.tid]; if (!t) continue; t.finished++; t.missions.add('koken'); if (s.rating !== '' && s.rating != null) t.stars.push(+s.rating); }
+  for (const f of fb) { const t = byT[f.tid]; if (t) { t.fb++; t.missions.add('feedback'); if (f.type === 'Werkt niet') t.bugs++; } }
   for (const f of er) { const t = byT[f.tid]; if (t) t.bugs++; }
+  for (const t of Object.values(byT)) if (t.missions.has('koken')) t.missions.add('proefrit');   // same rule as the app: cooked for real = no proefrit needed
   const kp = data.bewaard || [], keptBy = new Map(kp.map(k => [String(k.src), k]));
   const items = [
     ...fb.map(f => ({ ...f, tab: 'Feedback', id: f.fid, bug: f.type === 'Werkt niet', kept: keptBy.get(String(f.fid)) })),
@@ -413,7 +424,7 @@ function render(){
 /* Overzicht: vier kerncijfers, actieve testers per dag, aandachtspunten, nieuwste meldingen */
 function overzicht(d){
   const now = Date.now(), active7 = d.testers.filter(t => t.last && now - Date.parse(t.last) < 7 * DAY).length;
-  const started = d.ev.filter(e => e.kind === 'kook_start').length, done = d.ss.length;
+  const started = d.ev.filter(e => e.kind === 'kook_start' && !isProef(e)).length, done = d.ss.length, proef = d.ev.filter(e => e.kind === 'proefrit_klaar').length;
   const stars = d.ss.map(s => s.rating).filter(x => x !== '' && x != null).map(Number);
   const openBugs = d.groups.filter(g => g.prio === 'P1').length;
   const days = [...Array(14)].map((_, k) => dayKey(now - (13 - k) * DAY));
@@ -422,12 +433,13 @@ function overzicht(d){
   return `<section class="pane">
     <div class="kpis">
       <div class="kpi"><span class="lbl">Testers</span><b>${d.testers.length}</b><span>${active7} actief deze week</span></div>
-      <div class="kpi"><span class="lbl">Keer gekookt</span><b>${done}</b><span>${started} keer gestart</span></div>
+      <div class="kpi"><span class="lbl">Keer gekookt</span><b>${done}</b><span>${started} keer gestart · ${proef} ${proef === 1 ? 'proefrit' : 'proefritten'}</span></div>
       <div class="kpi"><span class="lbl">Gem. sterren</span><b>${nl1(avg(stars))}</b><span>${stars.length} beoordelingen</span></div>
       <div class="kpi ${openBugs ? 'alert' : ''}"><span class="lbl">${openBugs ? '⚠ ' : ''}Open P1</span><b>${openBugs}</b><span>${openBugs ? 'blokkeert testers' : 'niets dat blokkeert'}</span></div>
     </div>
     ${installCard()}
     <div class="card"><h2>Beslislijst</h2><p class="sub" style="margin:-4px 0 10px">Top 5 om nu aan te pakken: prioriteit × aantal testers × hoe recent</p>${decideList(d, 5)}</div>
+    ${onboardingCard(d)}
     <div class="grid2">
       <div class="card"><h2>Actieve testers per dag</h2><p class="sub">Laatste 14 dagen · tik op een staaf</p>
         <div class="bars" id="bars">${perDay.map((v, k) => `<div class="b ${v ? '' : 'zero'}" data-tip="${esc(fmtDay(days[k]))}: ${v} ${v === 1 ? 'tester' : 'testers'}"><i style="height:${(v / max * 100).toFixed(1)}%"></i></div>`).join('')}</div>
@@ -436,6 +448,14 @@ function overzicht(d){
       <div class="card"><h2>Let op</h2>${attn.length ? `<ul class="attn">${attn.join('')}</ul>` : '<p class="sub">Niets bijzonders. Alles loopt.</p>'}</div>
     </div>
   </section>`;
+}
+/* Onboarding: hoeveel testers elke missie haalden (proefrit telt niet als kookbeurt) */
+function onboardingCard(d){
+  const n = d.testers.length; if (!n) return '';
+  const rows = [['Aangemeld', n], ...MISSIONS.map(([id, l]) => [l, d.testers.filter(t => t.missions.has(id)).length])];
+  const all = d.testers.filter(t => MISSIONS.every(([id]) => t.missions.has(id))).length, off = d.testers.filter(t => t.tipsOff).length;
+  return `<div class="card"><h2>Onboarding</h2><p class="sub" style="margin:-4px 0 10px">Missies per tester · ${all} van ${n} alles gehaald${off ? ` · tips uitgezet door ${off}` : ''}</p>
+    <div class="funnel obfunnel" role="table">${rows.map(([l, v], k) => { const lost = k && rows[k-1][1] > v; return `<div class="fr of-row ${lost ? 'drop' : ''}" role="row" title="${esc(l)}: ${v} van ${n}"><span class="l" role="cell">${esc(l)}</span><span class="t" aria-hidden="true"><i style="width:${(v / n * 100).toFixed(1)}%"></i></span><span class="v" role="cell">${v}</span></div>`; }).join('')}</div></div>`;
 }
 function decideList(d, n){
   const top = d.groups.slice(0, n);
@@ -462,6 +482,10 @@ function attention(d){
     const drop = f.rows.reduce((best, row, k) => k && f.rows[k-1].v - row.v > (best?.lost || 0) ? { lost: f.rows[k-1].v - row.v, at: row.l } : best, null);
     if (drop && drop.lost) out.push(li('', '↘', `<b>${esc(short(r.title))}</b>: ${drop.lost} ${drop.lost === 1 ? 'tester haakt' : 'testers haken'} af bij “${esc(drop.at)}”`));
   }
+  const noRide = d.testers.filter(t => t.first && now - Date.parse(t.first) > DAY && !t.missions.has('proefrit'));
+  if (noRide.length) out.push(li('', '…', `Nog geen proefrit: ${noRide.map(t => '<b>' + esc(t.name) + '</b>').join(', ')}`));
+  const late = d.testers.filter(t => t.first && now - Date.parse(t.first) > 5 * DAY && !t.missions.has('koken'));
+  if (late.length) out.push(li('', '⏳', `Nog niet echt gekookt (dag 5+ van 7): ${late.map(t => '<b>' + esc(t.name) + '</b>').join(', ')}`));
   const fresh = d.testers.filter(t => t.first && now - Date.parse(t.first) < 2 * DAY);
   if (fresh.length) out.push(li('ok', '+', `Nieuw: ${fresh.map(t => esc(t.name)).join(', ')}`));
   return out.slice(0, 6);
@@ -480,20 +504,30 @@ function testersPane(d){
       <div class="th">${sel ? `<span class="ck" aria-hidden="true">${on ? '✓' : ''}</span>` : ''}<span class="av">${esc(initial(t.name))}</span><span class="nm">${esc(t.name)}<small>${esc(t.id)}</small></span><span class="spacer"></span>${t.group ? `<span class="chip">${esc(t.group)}</span>` : ''}</div>
       <div class="strip" aria-label="Actief op ${t.days.size} dagen">${days.map((k, i) => `<i class="${t.days.has(k) ? 'on' : ''} ${i === 13 ? 'today' : ''}" title="${esc(fmtDay(k))}"></i>`).join('')}</div>
       <div class="strip-lbl"><span>14 dagen geleden</span><span>vandaag</span></div>
-      <div class="nums"><span><b>${t.days.size}</b> actieve dagen</span><span><b>${t.finished}</b>/${t.started} keer klaar</span><span><b>${nl1(st)}</b> ★</span><span><b>${t.fb}</b> feedback</span>${t.bugs ? `<span class="chip bad">⚠ ${t.bugs} bug${t.bugs === 1 ? '' : 's'}</span>` : ''}</div>
+      <div class="nums"><span><b>${t.days.size}</b> actieve dagen</span><span><b>${t.finished}</b>/${t.started} keer klaar</span><span><b>${t.missions.size}</b>/${MISSIONS.length} missies</span><span><b>${nl1(st)}</b> ★</span><span><b>${t.fb}</b> feedback</span>${t.bugs ? `<span class="chip bad">⚠ ${t.bugs} bug${t.bugs === 1 ? '' : 's'}</span>` : ''}</div>
       <div class="nums"><span>Laatst: <b>${ago(t.last)}</b></span>${quiet >= 3 ? '<span class="chip warn">stil</span>' : ''}</div>
     </button>`; }).join('')}</div>${act}</section>`;
 }
-const KIND = { open:'App geopend', pagina:'Pagina', aanmelding:'Aangemeld', kook_start:'Kookmodus gestart', kook_dicht:'Kookmodus gesloten', klaar:'Klaar met koken' };
+const KIND = { open:'App geopend', pagina:'Pagina', aanmelding:'Aangemeld', kook_start:'Kookmodus gestart', kook_dicht:'Kookmodus gesloten', klaar:'Klaar met koken', proefrit:'Proefrit gekozen', echt_gekookt:'Toch echt gekookt' };
+function evText(e, r, name){
+  const x = det(e), P = isProef(e) ? 'Proefrit' : '';
+  if (e.kind === 'missie') return `Missie gehaald: ${(MISSIONS.find(m => m[0] === x.m) || [, x.m])[1]}`;
+  if (e.kind === 'tip') return 'Tips uitgezet';
+  if (e.kind === 'proefrit_klaar') return (x.via === 'snel' ? 'Snel doorgetikt, telt als proefrit' : 'Proefrit gehaald') + (name ? ` · ${name}` : '');
+  if (e.kind === 'stap') return `${P ? P + ' ' : ''}${name}: ${stepLabel(r, +e.step, r?.steps?.length || 99)}`;
+  if (e.kind === 'pagina') return e.screen === 'receptpagina' && name ? `Bekijkt ${name}` : `Opent ${e.screen}`;
+  if (P && e.kind === 'kook_start') return `Proefrit gestart${name ? ' · ' + name : ''}`;
+  if (P && e.kind === 'kook_dicht') return `Proefrit gesloten${name ? ' · ' + name : ''}`;
+  return (KIND[e.kind] || e.kind) + (name && e.kind !== 'open' ? ` · ${name}` : '');
+}
 function stepLabel(r, i, n){ if (i === -2) return 'vragen vooraf'; if (i === -1) return 'klaarzetten'; if (i >= n) return 'eindscherm'; return `stap ${i+1}${r?.steps?.[i]?.title ? ' · ' + r.steps[i].title : ''}`; }
 function testerDetail(d, t){
   if (!t) { view.tester = null; return testersPane(d); }
   const rec = id => recipes.find(r => r.id === id);
   const rows = [
-    ...d.ev.filter(e => e.tid === t.id).map(e => {
+    ...d.ev.filter(e => e.tid === t.id && !(e.kind === 'tip' && det(e).a !== 'uit')).map(e => {
       const r = rec(e.rid), name = r ? short(r.title) : '';
-      let txt = e.kind === 'stap' ? `${name}: ${stepLabel(r, +e.step, r?.steps?.length || 99)}` : e.kind === 'pagina' ? (e.screen === 'receptpagina' && name ? `Bekijkt ${name}` : `Opent ${e.screen}`) : (KIND[e.kind] || e.kind) + (name && e.kind !== 'open' ? ` · ${name}` : '');
-      return { at: e.at, txt: esc(txt) };
+      return { at: e.at, txt: esc(evText(e, r, name)), ok: e.kind === 'missie' };
     }),
     ...d.items.filter(i => i.tid === t.id).map(i => ({ at: i.at, bad: i.bug, txt: `<b>${esc(i.type)}</b>: ${esc(i.message)}` })),
     ...d.ss.filter(s => s.tid === t.id && s.rating !== '').map(s => ({ at: s.updated, txt: `★ ${esc(s.rating)} voor ${esc(short(s.title))}${s.chips ? ' · ' + esc(s.chips) : ''}${s.note ? ' · “' + esc(s.note) + '”' : ''}` }))
@@ -503,9 +537,10 @@ function testerDetail(d, t){
     <button class="back" type="button" id="back">← Alle testers</button>
     <div class="card"><div class="th"><span class="av">${esc(initial(t.name))}</span><span class="nm">${esc(t.name)}<small>${esc(t.id)}${t.group ? ' · ' + esc(t.group) : ''}</small></span></div>
       <div class="stats3"><div><b>${t.days.size}</b><span>actieve dagen</span></div><div><b>${t.finished}</b><span>keer gekookt</span></div><div><b>${nl1(avg(t.stars))}</b><span>gem. sterren</span></div></div>
+      <p class="sub">Missies: ${MISSIONS.map(([id, l]) => `${t.missions.has(id) ? '✓' : '○'} ${esc(l)}`).join(' · ')}${t.proef ? ` · ${t.proef}× proefrit` : ''}${t.tipsOff ? ' · tips uit' : ''}</p>
       <p class="sub">Eerste keer ${t.first ? fmtDay(t.first) : '–'} · laatst ${ago(t.last)} · ${esc(t.size || '')} · ${esc(String(t.device || '').replace(/\(KHTML.*$/, '').slice(0, 70))}</p>
       <p class="row" style="margin:10px 0 0"><button class="btn sm" type="button" id="t-feed">Feedback van ${esc(t.name)}</button><button class="btn sm ghostd" type="button" id="t-del" data-id="${esc(t.id)}">Verwijderen…</button></p></div>
-    <div class="card"><h2>Tijdlijn</h2>${rows.length ? `<ul class="tl">${rows.map(x => { const dk = fmtDay(x.at), head = dk !== lastDay ? `<li class="day">${dk}</li>` : ''; lastDay = dk; return head + `<li class="e ${x.bad ? 'bad' : ''}"><time>${fmtTime(x.at)}</time><span>${x.txt}</span></li>`; }).join('')}</ul>` : '<p class="sub">Nog niets gedaan.</p>'}</div>
+    <div class="card"><h2>Tijdlijn</h2>${rows.length ? `<ul class="tl">${rows.map(x => { const dk = fmtDay(x.at), head = dk !== lastDay ? `<li class="day">${dk}</li>` : ''; lastDay = dk; return head + `<li class="e ${x.bad ? 'bad' : ''} ${x.ok ? 'good' : ''}"><time>${fmtTime(x.at)}</time><span>${x.txt}</span></li>`; }).join('')}</ul>` : '<p class="sub">Nog niets gedaan.</p>'}</div>
   </section>`;
 }
 
@@ -514,7 +549,7 @@ const short = t => String(t || '').replace(/ met .*$/, '');
 function funnel(d, r){
   const n = (r.steps || []).length, reached = new Map();
   const add = (k, tid) => { if (!reached.has(k)) reached.set(k, new Set()); reached.get(k).add(tid); };
-  for (const e of d.ev) if (e.rid === r.id) {
+  for (const e of d.ev) if (e.rid === r.id && !isProef(e)) {
     if (e.kind === 'pagina' && e.screen === 'receptpagina') add('view', e.tid);
     if (e.kind === 'kook_start') add('start', e.tid);
     if (e.kind === 'stap') { const i = +e.step; add(i >= n ? 'end' : i < 0 ? 'prep' : 's' + i, e.tid); }
@@ -773,10 +808,19 @@ function demoData(){
       const base = now - k * 864e5 - (k ? 0 : 3600e3) - Math.floor(rnd() * 5) * 3600e3; days.push(dayKey(base));
       const r = R[Math.floor(rnd() * R.length)], n = (r.steps || []).length;
       let t = base; const ev = (kind, extra = {}) => events.push({ at: iso(t += 60e3 + rnd() * 120e3), tid: id, name, kind, rid: r.id, step: '', screen: '', details: '', ...extra });
-      ev('open', { rid: '' }); ev('pagina', { screen: 'receptpagina' });
+      ev('open', { rid: '' });
+      if (k === startDay) {   // first visit: sign up, most do the proefrit (onboarding mission 1). No rnd() here, so the rest of the demo stays the same
+        let o = 0; const ob = (kind, extra = {}) => events.push({ at: iso(base + 1000 * ++o), tid: id, name, kind, rid: '', step: '', screen: '', details: '', ...extra });
+        ob('aanmelding');
+        if (name !== 'Ilse') { const pr = R[R.length - 1], pd = JSON.stringify({ proef: 1 }); ob('kook_start', { rid: pr.id, details: pd }); for (let i = -2; i <= (pr.steps || []).length; i++) ob('stap', { rid: pr.id, step: i, screen: 'kookmodus', details: pd });
+          ob('proefrit_klaar', { rid: pr.id, details: JSON.stringify({ via: 'proefrit' }) }); ob('missie', { details: JSON.stringify({ m: 'proefrit', n: 1 }) }); }
+        if (name === 'Bram') ob('tip', { details: JSON.stringify({ tip: 'kook-stap', a: 'uit' }) });
+      }
+      ev('pagina', { screen: 'receptpagina' });
       if (rnd() < 0.75) {
         ev('kook_start'); const stop = rnd() < 0.25 ? Math.floor(rnd() * n) : n;
         for (let i = -2; i <= stop; i++) ev('stap', { step: i, screen: 'kookmodus' });
+        if (stop >= n && !sessies.some(s => s.tid === id)) events.push({ at: iso(t + 500), tid: id, name, kind: 'missie', rid: '', step: '', screen: '', details: JSON.stringify({ m: 'koken' }) });
         if (stop >= n) { const min = Math.round(22 + rnd() * 18); sessies.push({ sid: 'd' + events.length, tid: id, name, rid: r.id, title: r.title, date: dayKey(t), servings: 2, min, recipeMin: r.minutes || 25, rating: rnd() < 0.8 ? Math.min(5, 3 + Math.floor(rnd() * 3)) : '', chips: rnd() < 0.4 ? ['Te flauw', 'Te zout', 'Precies goed'][Math.floor(rnd() * 3)] : '', note: rnd() < 0.3 ? ['Kip was na 6 min al gaar', 'Saus iets te dun, meer pesto', 'Heerlijk! Volgende keer dubbele portie'][Math.floor(rnd() * 3)] : '', adj: '', updated: iso(t) }); ev('klaar'); }
         else ev('kook_dicht', { step: stop });
       }
@@ -786,6 +830,7 @@ function demoData(){
   }
   const fbs = [['SANNE-7K3F', 'Sanne', 'Snap ik niet', 'Waar zie ik hoeveel pasta ik nodig heb tijdens het koken?', 'kookmodus: stap 1 van 6 (Pasta koken)', 5], ['JOOST-Q2MA', 'Joost', 'Werkt niet', 'Timer ging niet af toen mijn scherm uit stond', 'kookmodus: stap 2 van 6 (Kip bruinen)', 1.2], ['MAM-H8TX', 'Mam', 'Mooi', 'Fijn dat je de ingrediënten kunt afvinken!', 'kookmodus: klaarzetten', 3], ['ILSE-4RWP', 'Ilse', 'Idee', 'Boodschappenlijst maken vanuit het recept?', 'receptpagina', 2], ['SANNE-7K3F', 'Sanne', 'Werkt niet', 'Knop Verder reageerde pas na 2x tikken', 'kookmodus: stap 4 van 6 (Saus mengen)', 0.3]];
   fbs.push(['MAM-H8TX', 'Mam', 'Werkt niet', 'Verder-knop deed niks bij Saus mengen', 'kookmodus: stap 4 van 6 (Saus mengen)', 0.8], ['ILSE-4RWP', 'Ilse', 'Snap ik niet', 'Hoeveel pasta moet ik pakken?', 'kookmodus: stap 1 van 6 (Pasta koken)', 1.5]);
+  [...new Set(fbs.map(f => f[0]))].forEach(tid => { const f = fbs.filter(x => x[0] === tid).sort((a, b) => b[5] - a[5])[0]; events.push({ at: iso(now - f[5] * 864e5 + 60e3), tid, name: f[1], kind: 'missie', rid: '', step: '', screen: '', details: JSON.stringify({ m: 'feedback' }) }); });
   fbs.forEach(([tid, name, type, message, screen, dAgo], k) => feedback.push({ fid: 'f' + k, at: iso(now - dAgo * 864e5), tid, name, type, message, screen, rid: R[0].id, context: '', status: k === 1 ? 'opgelost' : k === 3 ? 'gepland' : 'nieuw', prio: k === 3 ? 'P2' : '' }));
   fouten.push({ eid: 'e1', at: iso(now - 0.1 * 864e5), tid: 'BRAM-ZN6C', name: 'Bram', message: "Cannot read properties of undefined (reading 'timer')", source: 'app.js:1094:41', screen: 'kookmodus: stap 3 van 6 (Groente)', rid: R[0].id, version: 'v45', device: 'Linux; Android 13; SM-A536B', stack: "TypeError: Cannot read properties of undefined (reading 'timer')\n    at adjustTimer (app.js:1094:41)\n    at HTMLButtonElement.<anonymous> (app.js:1001:7)", status: 'nieuw', prio: '' });
   events.sort((a, b) => a.at.localeCompare(b.at));
