@@ -17,9 +17,9 @@ telefoon tester ──(events, feedback, fouten)──▶ Apps Script ──▶ 
 - Testers kiezen bij openen een voornaam en krijgen een test-ID (`SANNE-7K3F`). Pas na "Akkoord, starten" gaat er iets van de telefoon af.
 - Gemeten: app geopend, pagina's, kookmodus gestart/gesloten, elke kookstap, klaar, sessies (sterren, chips, notitie, timeraanpassingen), feedback en JavaScript-fouten. Zonder internet wacht alles in een wachtrij.
 - Meldingen (gratis, binnen de [limieten van ntfy.sh](https://docs.ntfy.sh/publish/#limitations): 250/dag per IP, en Apps Script deelt IP's):
-  urgent (fout, "Werkt niet") direct en samengevoegd per verzoek; de rest gebundeld, hooguit eens per 30 min (trigger elke 10 min);
-  eigen dagbudget 60 pushberichten; lukt push niet, dan per mail (max. 20/dag). Optioneel een gratis ntfy.sh-token in Instellingen B7:
-  dan telt de limiet per account in plaats van per gedeeld Google-IP. Diagnose: functie `testMelding`.
+  alles gebundeld. Urgent (fout, "Werkt niet") standaard elke 1 uur, overig elke 6 uur, alleen als er iets is. Zelf aan te passen in
+  tabblad Instellingen: B9 (urgent, uren), B10 (overig, uren; 0 = direct), B8 mail: reserve / altijd / nee (zelfde bundels en tijden).
+  Eigen dagbudget 60 pushberichten. Optioneel een gratis ntfy.sh-token in B7 (limiet per account i.p.v. gedeeld IP). Diagnose: `testMelding`.
 
 ## Mappen
 

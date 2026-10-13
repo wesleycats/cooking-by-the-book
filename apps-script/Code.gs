@@ -20,10 +20,12 @@
 
 const TZ = 'Europe/Amsterdam';
 const NOTIFY = { errors: true, feedback: true, newTester: true };
-// ntfy.sh (gratis) telt per IP: 250 berichten/dag, 60 achter elkaar, daarna 1 per 5 s. Apps Script deelt IP's met andere
-// scripts, dus we blijven er ruim onder: urgent (prioriteit ≥ 4) direct en samengevoegd per verzoek, de rest als bundel
-// hooguit eens per DIGEST_MIN minuten, een eigen dagbudget, en bij een mislukte push gratis per mail (MailApp, 100/dag).
-const BUDGET = { pushPerDay: 60, mailPerDay: 20, digestMin: 30 };
+// ntfy.sh (gratis) telt per IP: 250 berichten/dag, 60 achter elkaar. Apps Script deelt IP's met andere scripts, dus
+// alles wordt gebundeld: urgent (fout, "Werkt niet") en overig elk in een eigen bundel, die pas vertrekt als de oudste
+// melding erin het ingestelde aantal uren oud is (Instellingen B9 en B10; 0 = direct). Geen meldingen = geen bericht.
+// Mail (B8): reserve (alleen als push mislukt), altijd (push én mail) of nee. Dezelfde bundels en tijden gelden voor mail.
+const BUDGET = { pushPerDay: 60, mailPerDay: 40 };
+const DEFAULT_HOURS = { urgent: 1, rest: 6 };
 // prioriteit per feedbacksoort (ntfy: 5 = urgent, 4 = hoog, 3 = normaal met geluid, 2 = stil)
 const FB_PRIO = { 'Werkt niet': [4, 'bug', '🐞'], 'Snap ik niet': [3, 'question', '❓'], 'Idee': [3, 'bulb', '💡'], 'Mooi': [2, 'heart', '♥'] };
 
@@ -51,10 +53,10 @@ function setup() {
   if (!props.getProperty('NTFY_TOPIC')) props.setProperty('NTFY_TOPIC', 'cbtb-' + randomId(18));
   if (!props.getProperty('DASHBOARD_KEY')) props.setProperty('DASHBOARD_KEY', randomId(24));
   const set = ss.getSheetByName('Instellingen') || ss.insertSheet('Instellingen');
-  const keep = c => String(set.getRange(c).getValue() || '');      // wat Wes zelf invulde, bewaren bij opnieuw uitvoeren
-  const keepUrl = keep('B4'), keepToken = keep('B7'), keepMail = keep('B8');
+  const keep = c => { const v = set.getRange(c).getValue(); return v === null || v === undefined ? '' : String(v); };      // wat Wes zelf invulde, bewaren bij opnieuw uitvoeren
+  const keepUrl = keep('B4'), keepToken = keep('B7'), keepMail = keep('B8'), keepU = keep('B9'), keepR = keep('B10');
   set.clear();
-  set.getRange(1, 1, 8, 2).setValues([
+  set.getRange(1, 1, 10, 2).setValues([
     ['Meldingskanaal (ntfy)', props.getProperty('NTFY_TOPIC')],
     ['Abonneren', 'Installeer de app "ntfy" → + → vul het meldingskanaal hierboven in (server ntfy.sh)'],
     ['Dashboardsleutel', props.getProperty('DASHBOARD_KEY')],
@@ -62,9 +64,21 @@ function setup() {
     ['Dashboard', '=IF(LEFT(B4,4)="http","https://wesleycats.github.io/cooking-by-the-book/dashboard.html#k="&B3&"&u="&ENCODEURL(B4),"vul eerst B4 in")'],
     ['Let op', 'Deel de sleutel, het kanaal en de token niet: wie ze heeft, ziet de testgegevens of je meldingen.'],
     ['ntfy-token (optioneel)', keepToken || '(leeg = zonder account; plak hier een gratis ntfy.sh-token, begint met tk_)'],
-    ['Reserve per mail', keepMail || 'ja']
+    ['Mail', /^(altijd|nee)$/i.test(keepMail) ? keepMail.toLowerCase() : 'reserve'],
+    ['Urgent bundelen: elke … uur', keepU !== '' ? keepU : DEFAULT_HOURS.urgent],
+    ['Overig bundelen: elke … uur', keepR !== '' ? keepR : DEFAULT_HOURS.rest]
   ]);
-  set.getRange('A1:A8').setFontWeight('bold'); set.setColumnWidth(1, 190); set.setColumnWidth(2, 520);
+  set.getRange(8, 3, 3, 1).setValues([
+    ['reserve = alleen als de pushmelding mislukt · altijd = push én mail · nee = geen mail'],
+    ['Fouten en "Werkt niet". Getal in uren, bv. 1 of 0,5. 0 = direct. Geldt voor push én mail.'],
+    ['Snap ik niet, ideeën, mooi, nieuwe testers. Getal in uren, bv. 6. 0 = direct.']
+  ]);
+  set.getRange('A1:A10').setFontWeight('bold'); set.setColumnWidth(1, 220); set.setColumnWidth(2, 380); set.setColumnWidth(3, 520);
+  try {   // keuzelijst en getalcontrole, zodat een tikfout niets breekt
+    set.getRange('B8').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['reserve', 'altijd', 'nee'], true).build());
+    set.getRange('B9:B10').setDataValidation(SpreadsheetApp.newDataValidation().requireNumberBetween(0, 48).setHelpText('Aantal uren tussen 0 en 48').build());
+    set.getRange('B8:B10').setBackground('#fff8e1');
+  } catch (err) { console.warn('Validatie niet gezet: ' + err); }
   // bundel-trigger: verstuurt opgespaarde meldingen ook als er even niets binnenkomt
   if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'digestVersturen'))
     ScriptApp.newTrigger('digestVersturen').timeBased().everyMinutes(10).create();
@@ -143,24 +157,33 @@ function upsertSession_(ss, tid, name, it) {
 function dispatch_(alerts) {
   if (!alerts.length) return;
   const urgent = alerts.filter(a => a[2] >= 4), rest = alerts.filter(a => a[2] < 4);
-  if (rest.length) queue_(rest);
-  if (urgent.length === 1) deliver_(urgent[0][0], urgent[0][1], 4, urgent[0][3]);
-  else if (urgent.length > 1) deliver_('⚠️ ' + urgent.length + ' dringende meldingen', urgent.map(a => a[0] + ' — ' + a[1].split('\n')[0]).join('\n'), 4, ['warning']);
+  if (urgent.length) queue_('urgent', urgent);
+  if (rest.length) queue_('rest', rest);
   digestVersturen(false);
 }
-function queue_(alerts) {
-  const p = PropertiesService.getScriptProperties(), q = JSON.parse(p.getProperty('DIGEST') || '[]');
-  alerts.forEach(a => q.push([a[0], String(a[1]).split('\n')[0].slice(0, 160)]));
-  p.setProperty('DIGEST', JSON.stringify(q.slice(-60)));
+function queue_(name, alerts) {
+  const p = PropertiesService.getScriptProperties(), key = 'Q_' + name.toUpperCase(), q = JSON.parse(p.getProperty(key) || '[]');
+  alerts.forEach(a => q.push([a[0], String(a[1]).split('\n')[0].slice(0, 160), Date.now()]));
+  p.setProperty(key, JSON.stringify(q.slice(-60)));
 }
-/** Verstuurt de bundel als de vorige minstens BUDGET.digestMin minuten geleden is (tijdtrigger elke 10 min). */
+function hours_(cell, def) {
+  const v = parseFloat(String(setting_(cell)).replace(',', '.'));
+  return isNaN(v) || v < 0 ? def : Math.min(v, 48);
+}
+/** Verstuurt een bundel zodra de oudste melding erin het ingestelde aantal uren oud is. Tijdtrigger elke 10 min. */
 function digestVersturen(force) {
-  const p = PropertiesService.getScriptProperties(), q = JSON.parse(p.getProperty('DIGEST') || '[]');
-  if (!q.length) return;
-  if (force !== true && Date.now() - Number(p.getProperty('DIGEST_AT') || 0) < BUDGET.digestMin * 60000) return;
-  const title = q.length === 1 ? q[0][0] : '📋 ' + q.length + ' nieuwe meldingen';
-  const body = q.length === 1 ? q[0][1] : q.slice(0, 12).map(x => '• ' + x[0] + (x[1] ? ' — ' + x[1] : '')).join('\n') + (q.length > 12 ? '\n… en ' + (q.length - 12) + ' meer in het dashboard' : '');
-  if (deliver_(title, body.slice(0, 3500), 3, ['clipboard'])) { p.setProperty('DIGEST', '[]'); p.setProperty('DIGEST_AT', String(Date.now())); }
+  const p = PropertiesService.getScriptProperties();
+  const kinds = [['urgent', hours_('B9', DEFAULT_HOURS.urgent), 4, '⚠️', 'dringende meldingen', ['warning']],
+                 ['rest', hours_('B10', DEFAULT_HOURS.rest), 3, '📋', 'nieuwe meldingen', ['clipboard']]];
+  for (const [name, hrs, prio, ic, label, tags] of kinds) {
+    const key = 'Q_' + name.toUpperCase(), q = JSON.parse(p.getProperty(key) || '[]');
+    if (!q.length) continue;
+    const oldest = Math.min(...q.map(x => x[2] || Date.now()));
+    if (force !== true && Date.now() - oldest < hrs * 3600000) continue;
+    const title = q.length === 1 ? q[0][0] : ic + ' ' + q.length + ' ' + label;
+    const body = q.length === 1 ? q[0][1] : q.slice(0, 15).map(x => '• ' + x[0] + (x[1] ? ' — ' + x[1] : '')).join('\n') + (q.length > 15 ? '\n… en ' + (q.length - 15) + ' meer in het dashboard' : '');
+    if (deliver_(title, body.slice(0, 3500), prio, tags)) p.setProperty(key, '[]');
+  }
 }
 /** Eén pushbericht; mislukt het (limiet, storing, budget op), dan per mail. Geeft true als het ergens is aangekomen. */
 function deliver_(title, message, priority, tags) {
@@ -181,12 +204,13 @@ function deliver_(title, message, priority, tags) {
       if (!ok) why = 'ntfy ' + r.getResponseCode() + (r.getResponseCode() === 429 ? ' (limiet van ntfy.sh)' : '') + ': ' + r.getContentText().slice(0, 200);
     } catch (err) { why = 'ntfy niet bereikbaar: ' + err; }
   }
-  if (ok) return true;
+  if (ok) { if (mailMode_() === 'altijd') mail_(title, message); return true; }
   console.warn('Push mislukt: ' + why);
   return mail_(title, message + '\n\n— Per mail omdat de pushmelding niet lukte (' + why + ').');
 }
+function mailMode_() { const v = setting_('B8').toLowerCase(); return v === 'altijd' || v === 'nee' ? v : 'reserve'; }
 function mail_(title, body) {
-  if (/^n/i.test(setting_('B8'))) return false;
+  if (mailMode_() === 'nee') return false;
   const p = PropertiesService.getScriptProperties(), day = Utilities.formatDate(new Date(), 'UTC', 'yyyy-MM-dd');
   const used = JSON.parse(p.getProperty('MAIL_DAY') || '{}'), n = used.d === day ? used.n : 0;
   if (n >= BUDGET.mailPerDay) { console.warn('Ook mailbudget op'); return false; }
@@ -196,13 +220,14 @@ function mail_(title, body) {
     return true;
   } catch (err) { console.error('Mail mislukt: ' + err); return false; }
 }
-function setting_(cell) { const set = SpreadsheetApp.getActive().getSheetByName('Instellingen'); return set ? String(set.getRange(cell).getValue() || '').trim() : ''; }
+function setting_(cell) { const set = SpreadsheetApp.getActive().getSheetByName('Instellingen'); if (!set) return ''; const v = set.getRange(cell).getValue(); return v === null || v === undefined ? '' : String(v).trim(); }
 
 /** Handmatige test: kies `testMelding` → Uitvoeren. Het logboek onderin laat zien wat er gebeurt. */
 function testMelding() {
   const p = PropertiesService.getScriptProperties();
   console.log('Kanaal: ' + p.getProperty('NTFY_TOPIC') + '  (moet exact gelijk zijn aan het abonnement in de ntfy-app)');
   console.log('Token: ' + (/^tk_/.test(setting_('B7')) ? 'ja (limiet per account)' : 'nee (limiet per gedeeld Google-IP)') + ' · vandaag verstuurd: ' + (JSON.parse(p.getProperty('PUSH_DAY') || '{}').n || 0) + '/' + BUDGET.pushPerDay);
+  console.log('Bundels: urgent elke ' + hours_('B9', DEFAULT_HOURS.urgent) + ' uur, overig elke ' + hours_('B10', DEFAULT_HOURS.rest) + ' uur · mail: ' + mailMode_());
   const ok = deliver_('🔔 Proefkeuken test', 'Als je dit ziet, werken de meldingen.', 4, ['bell']);
   console.log(ok ? 'Aangekomen (push, of per mail als push niet lukte: zie waarschuwing hierboven).' : 'Niet aangekomen: zie de waarschuwingen hierboven.');
 }
