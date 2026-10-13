@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
-<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<link rel="icon" type="image/svg+xml" href="icons/dashboard/dash-icon.svg">
+<link rel="apple-touch-icon" href="icons/dashboard/dash-apple-touch-180.png">
 <link rel="manifest" href="dashboard.webmanifest">
-<meta name="theme-color" content="#2F6B3A">
+<meta name="theme-color" content="#1C2419">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Proefkeuken">
@@ -422,7 +422,7 @@ const standalone = () => matchMedia('(display-mode: standalone)').matches || nav
 function installCard(){
   if (standalone() || lsGet().noInstall) return '';
   const ios = /iphone|ipad/i.test(navigator.userAgent);
-  return `<div class="card install"><img src="icons/icon-192.png" alt=""><p><b>Zet het dashboard op je beginscherm</b><br><span class="muted">${installEvt ? 'Opent dan als app, zonder adresbalk.' : ios ? 'Tik op Delen ↑ → Zet op beginscherm.' : 'Chrome-menu ⋮ → App installeren (of Toevoegen aan startscherm).'}</span></p>${installEvt ? '<button class="btn primary sm" type="button" id="do-install">Installeren</button>' : '<button class="btn sm" type="button" id="no-install">Oké</button>'}</div>`;
+  return `<div class="card install"><img src="icons/dashboard/dash-icon-192.png" alt=""><p><b>Zet het dashboard op je beginscherm</b><br><span class="muted">${installEvt ? 'Opent dan als app, zonder adresbalk.' : ios ? 'Tik op Delen ↑ → Zet op beginscherm.' : 'Chrome-menu ⋮ → App installeren (of Toevoegen aan startscherm).'}</span></p>${installEvt ? '<button class="btn primary sm" type="button" id="do-install">Installeren</button>' : '<button class="btn sm" type="button" id="no-install">Oké</button>'}</div>`;
 }
 function attention(d){
   const out = [], now = Date.now();
