@@ -87,6 +87,28 @@ details.more ul{margin:6px 0 0;padding-left:18px;font-size:.84rem}
 .seg button{border:0;background:none;border-radius:999px;padding:5px 12px;font-size:.8rem;font-weight:600;color:var(--muted);cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgb(0 0 0/.12)}
 .install{display:flex;gap:12px;align-items:center}
+/* selecteren en verwijderen */
+.selbar{display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap}
+.tester.sel{outline:2.5px solid var(--accent);outline-offset:-1px}
+.tester .ck{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);display:grid;place-items:center;flex:none;font:800 .8rem var(--f-display);color:var(--accent-fg)}
+.tester.sel .ck{background:var(--accent);border-color:var(--accent)}
+.actbar{position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:21;background:var(--fg);color:var(--bg);border-radius:16px;padding:10px 12px;display:flex;gap:8px;align-items:center;box-shadow:0 8px 24px -8px rgb(0 0 0/.5)}
+.actbar .spacer{flex:1}
+.actbar .btn{background:transparent;color:var(--bg);border-color:color-mix(in srgb,var(--bg) 35%,transparent)}
+.actbar .btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+@media (min-width:760px){.actbar{left:50%;right:auto;transform:translateX(-50%);width:520px;bottom:96px}}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn.ghostd{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,var(--line))}
+.modal-back{position:fixed;inset:0;background:rgb(0 0 0/.45);z-index:40}
+.modal{position:fixed;left:0;right:0;bottom:0;z-index:41;background:var(--surface);border-radius:20px 20px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom));display:grid;gap:12px;max-height:88vh;overflow:auto}
+@media (min-width:760px){.modal{left:50%;right:auto;bottom:auto;top:50%;transform:translate(-50%,-50%);width:480px;border-radius:20px}}
+.modal h2{font-size:1.2rem}
+.opt{display:grid;grid-template-columns:22px 1fr;gap:10px;align-items:start;border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer}
+.opt input{margin:3px 0 0;accent-color:var(--danger)}
+.opt b{display:block}
+.opt small{color:var(--muted);font-size:.8rem}
+.who-list{font-size:.86rem;color:var(--muted);margin:0}
+.toast .undo{margin-left:10px;background:none;border:0;color:var(--pop);font-weight:800;cursor:pointer;padding:0}
 .install img{width:44px;height:44px;border-radius:11px;flex:none}
 .install p{margin:0;font-size:.86rem;flex:1}
 section.pane{display:grid;gap:16px}
@@ -266,12 +288,18 @@ async function load(){
     else {
       const { key, url } = lsGet();
       if (!key || !url) { data = null; renderSetup(); return; }
-      const j = await fetch(url + '?key=' + encodeURIComponent(key), { cache:'no-store' }).then(r => r.json());
+      let j;
+      try { j = await fetch(url + '?key=' + encodeURIComponent(key), { cache:'no-store' }).then(r => r.json()); }
+      catch(e) { throw new Error('ophalen: ' + e.message); }
       if (j.error) { renderSetup(j.error); return; }
       data = j;
     }
-    render();
-  } catch(e) { $('upd').textContent = 'Ophalen mislukt'; if (!data) renderSetup('Kon de gegevens niet ophalen. Klopt de web-app-URL en staat Toegang op "Iedereen"?'); }
+    try { render(); } catch(e) { console.error(e); throw new Error('tonen: ' + e.message); }
+  } catch(e) {
+    $('upd').textContent = 'Mislukt';
+    const why = String(e.message || e);
+    if (!data || why.startsWith('tonen')) renderSetup(why.startsWith('tonen') ? 'Gegevens opgehaald, maar het dashboard liep vast (' + why + '). Stuur deze melding naar Claude.' : 'Kon de gegevens niet ophalen (' + why + '). Klopt de web-app-URL, staat Toegang op "Iedereen" en is de nieuwste versie geïmplementeerd?');
+  }
   finally { loading = false; $('reload').classList.remove('spin'); }
 }
 $('reload').onclick = load;
@@ -281,7 +309,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 /* ---------- afgeleide cijfers ---------- */
 function derive(){
   const ev = data.events || [], ts = data.testers || [], fb = data.feedback || [], er = data.fouten || [], ss = data.sessies || [];
-  const byT = Object.fromEntries(ts.map(t => [t.id, { ...t, days: new Set(String(t.dayList || '').split(',').filter(Boolean)), started: 0, finished: 0, fb: 0, bugs: 0, stars: [] }]));
+  const byT = Object.fromEntries(ts.map(t => [t.id, { ...t, days: new Set(String(t.dayList || '').split(',').map(x => x.trim()).filter(Boolean).map(x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : isNaN(new Date(x)) ? '' : dayKey(x)).filter(Boolean)), started: 0, finished: 0, fb: 0, bugs: 0, stars: [] }]));
   for (const e of ev) { const t = byT[e.tid]; if (!t) continue; t.days.add(dayKey(e.at)); if (e.kind === 'kook_start') t.started++; }
   for (const s of ss) { const t = byT[s.tid]; if (!t) continue; t.finished++; if (s.rating !== '' && s.rating != null) t.stars.push(+s.rating); }
   for (const f of fb) { const t = byT[f.tid]; if (t) { t.fb++; if (f.type === 'Werkt niet') t.bugs++; } }
@@ -398,16 +426,18 @@ function attention(d){
 function testersPane(d){
   if (view.tester) return testerDetail(d, d.byT[view.tester]);
   if (!d.testers.length) return `<div class="card empty">Nog geen testers. Ga naar <b>Uitnodigen</b> en deel je link of QR-code.</div>`;
-  const days = [...Array(14)].map((_, k) => dayKey(Date.now() - (13 - k) * DAY));
-  return `<section class="pane"><div class="testers">${d.testers.map(t => {
-    const st = avg(t.stars), quiet = t.last ? (Date.now() - Date.parse(t.last)) / DAY : 99;
-    return `<button class="tester" type="button" data-tester="${esc(t.id)}">
-      <div class="th"><span class="av">${esc(initial(t.name))}</span><span class="nm">${esc(t.name)}<small>${esc(t.id)}</small></span><span class="spacer"></span>${t.group ? `<span class="chip">${esc(t.group)}</span>` : ''}</div>
+  const days = [...Array(14)].map((_, k) => dayKey(Date.now() - (13 - k) * DAY)), sel = view.sel;
+  const bar = `<div class="selbar"><span class="sub">${d.testers.length} ${d.testers.length === 1 ? 'tester' : 'testers'}</span>${sel ? `<span class="row"><button class="btn sm" type="button" id="sel-all">${sel.size === d.testers.length ? 'Niets' : 'Alles'} selecteren</button><button class="btn sm" type="button" id="sel-off">Klaar</button></span>` : '<button class="btn sm" type="button" id="sel-on">Selecteren</button>'}</div>`;
+  const act = sel && sel.size ? `<div class="actbar" role="toolbar"><b>${sel.size} geselecteerd</b><span class="spacer"></span><button class="btn sm danger" type="button" id="sel-del">Verwijderen…</button></div>` : '';
+  return `<section class="pane">${bar}<div class="testers">${d.testers.map(t => {
+    const st = avg(t.stars), quiet = t.last ? (Date.now() - Date.parse(t.last)) / DAY : 99, on = sel && sel.has(t.id);
+    return `<button class="tester ${on ? 'sel' : ''}" type="button" data-tester="${esc(t.id)}" ${sel ? `aria-pressed="${!!on}"` : ''}>
+      <div class="th">${sel ? `<span class="ck" aria-hidden="true">${on ? '✓' : ''}</span>` : ''}<span class="av">${esc(initial(t.name))}</span><span class="nm">${esc(t.name)}<small>${esc(t.id)}</small></span><span class="spacer"></span>${t.group ? `<span class="chip">${esc(t.group)}</span>` : ''}</div>
       <div class="strip" aria-label="Actief op ${t.days.size} dagen">${days.map((k, i) => `<i class="${t.days.has(k) ? 'on' : ''} ${i === 13 ? 'today' : ''}" title="${esc(fmtDay(k))}"></i>`).join('')}</div>
       <div class="strip-lbl"><span>14 dagen geleden</span><span>vandaag</span></div>
       <div class="nums"><span><b>${t.days.size}</b> actieve dagen</span><span><b>${t.finished}</b>/${t.started} keer klaar</span><span><b>${nl1(st)}</b> ★</span><span><b>${t.fb}</b> feedback</span>${t.bugs ? `<span class="chip bad">⚠ ${t.bugs} bug${t.bugs === 1 ? '' : 's'}</span>` : ''}</div>
       <div class="nums"><span>Laatst: <b>${ago(t.last)}</b></span>${quiet >= 3 ? '<span class="chip warn">stil</span>' : ''}</div>
-    </button>`; }).join('')}</div></section>`;
+    </button>`; }).join('')}</div>${act}</section>`;
 }
 const KIND = { open:'App geopend', pagina:'Pagina', aanmelding:'Aangemeld', kook_start:'Kookmodus gestart', kook_dicht:'Kookmodus gesloten', klaar:'Klaar met koken' };
 function stepLabel(r, i, n){ if (i === -2) return 'vragen vooraf'; if (i === -1) return 'klaarzetten'; if (i >= n) return 'eindscherm'; return `stap ${i+1}${r?.steps?.[i]?.title ? ' · ' + r.steps[i].title : ''}`; }
@@ -429,7 +459,7 @@ function testerDetail(d, t){
     <div class="card"><div class="th"><span class="av">${esc(initial(t.name))}</span><span class="nm">${esc(t.name)}<small>${esc(t.id)}${t.group ? ' · ' + esc(t.group) : ''}</small></span></div>
       <div class="stats3"><div><b>${t.days.size}</b><span>actieve dagen</span></div><div><b>${t.finished}</b><span>keer gekookt</span></div><div><b>${nl1(avg(t.stars))}</b><span>gem. sterren</span></div></div>
       <p class="sub">Eerste keer ${t.first ? fmtDay(t.first) : '–'} · laatst ${ago(t.last)} · ${esc(t.size || '')} · ${esc(String(t.device || '').replace(/\(KHTML.*$/, '').slice(0, 70))}</p>
-      <p style="margin:10px 0 0"><button class="btn sm" type="button" id="t-feed">Feedback van ${esc(t.name)}</button></p></div>
+      <p class="row" style="margin:10px 0 0"><button class="btn sm" type="button" id="t-feed">Feedback van ${esc(t.name)}</button><button class="btn sm ghostd" type="button" id="t-del" data-id="${esc(t.id)}">Verwijderen…</button></p></div>
     <div class="card"><h2>Tijdlijn</h2>${rows.length ? `<ul class="tl">${rows.map(x => { const dk = fmtDay(x.at), head = dk !== lastDay ? `<li class="day">${dk}</li>` : ''; lastDay = dk; return head + `<li class="e ${x.bad ? 'bad' : ''}"><time>${fmtTime(x.at)}</time><span>${x.txt}</span></li>`; }).join('')}</ul>` : '<p class="sub">Nog niets gedaan.</p>'}</div>
   </section>`;
 }
@@ -540,7 +570,14 @@ function bind(d){
   const bars = $('bars');
   if (bars) { let tip = null; const show = b => { bars.querySelectorAll('.b.on').forEach(x => x.classList.remove('on')); tip?.remove(); if (!b) return; b.classList.add('on'); tip = document.createElement('div'); tip.className = 'tip'; tip.textContent = b.dataset.tip; tip.style.left = (b.offsetLeft + b.offsetWidth / 2) + 'px'; tip.style.top = '14px'; bars.appendChild(tip); };
     bars.querySelectorAll('.b').forEach(b => { b.onmouseenter = () => show(b); b.onclick = () => show(b); }); bars.onmouseleave = () => show(null); }
-  m.querySelectorAll('[data-tester]').forEach(b => b.onclick = () => { view.tester = b.dataset.tester; render(); window.scrollTo(0, 0); });
+  m.querySelectorAll('[data-tester]').forEach(b => b.onclick = () => {
+    if (view.sel) { const id = b.dataset.tester; view.sel.has(id) ? view.sel.delete(id) : view.sel.add(id); const y = scrollY; render(); scrollTo(0, y); return; }
+    view.tester = b.dataset.tester; render(); window.scrollTo(0, 0); });
+  if ($('sel-on')) $('sel-on').onclick = () => { view.sel = new Set(); render(); };
+  if ($('sel-off')) $('sel-off').onclick = () => { view.sel = null; render(); };
+  if ($('sel-all')) $('sel-all').onclick = () => { view.sel = view.sel.size === d.testers.length ? new Set() : new Set(d.testers.map(t => t.id)); render(); };
+  if ($('sel-del')) $('sel-del').onclick = () => openDelete(d, [...view.sel]);
+  if ($('t-del')) $('t-del').onclick = () => openDelete(d, [$('t-del').dataset.id]);
   if ($('back')) $('back').onclick = () => { view.tester = null; render(); };
   if ($('t-feed')) $('t-feed').onclick = () => { view.ft = view.tester; view.ff = 'alles'; view.tester = null; tab = 'feedback'; render(); window.scrollTo(0, 0); };
   m.querySelectorAll('[data-ff]').forEach(b => b.onclick = () => { view.ff = b.dataset.ff; render(); });
@@ -571,6 +608,57 @@ function bind(d){
     $('inv-share').onclick = async () => { const url = inviteUrl(grp.value); if (navigator.share) { try { await navigator.share({ title: 'Doe mee met de Proefkeuken', text: INVITE_TEXT, url }); } catch(e) {} } else copy(INVITE_TEXT + '\n' + url, 'Uitnodiging gekopieerd'); };
     $('inv-png').onclick = () => savePng(inviteUrl(grp.value), grp.value);
   }
+}
+/* ---------- verwijderen ----------
+   Twee keuzes: alleen testdata (tester blijft) of tester en alle data. Bij iedereen tegelijk: typ VERWIJDER.
+   De server zet alles eerst in de verborgen Prullenbak (30 dagen); "Ongedaan maken" zet het terug. */
+function openDelete(d, ids){
+  const ts = ids.map(id => d.byT[id]).filter(Boolean), everyone = ts.length === d.testers.length && d.testers.length > 0;
+  const n = (arr, key = 'tid') => arr.filter(x => ids.includes(x[key])).length;
+  const counts = { ev: n(d.ev), ss: n(d.ss), fb: n(data.feedback || []), fo: n(data.fouten || []) };
+  document.getElementById('del-root')?.remove();
+  const root = document.createElement('div'); root.id = 'del-root';
+  root.innerHTML = `<div class="modal-back" id="del-back"></div><div class="modal" role="dialog" aria-labelledby="del-h">
+    <h2 id="del-h">${everyone ? 'Alle testers' : ts.length === 1 ? esc(ts[0].name) : ts.length + ' testers'} verwijderen</h2>
+    <p class="who-list">${ts.map(t => esc(t.name)).join(', ')} · ${counts.ev} events, ${counts.ss} sessies, ${counts.fb} feedback, ${counts.fo} fouten</p>
+    <label class="opt"><input type="radio" name="del-scope" value="data" checked><span><b>Alleen testdata</b><small>Gebruik, sessies, feedback en fouten weg. ${ts.length === 1 ? 'De tester blijft' : 'De testers blijven'} staan en ${ts.length === 1 ? 'kan' : 'kunnen'} gewoon verder.</small></span></label>
+    <label class="opt"><input type="radio" name="del-scope" value="all"><span><b>Tester en alle data</b><small>Helemaal weg. Opent ${ts.length === 1 ? 'deze tester' : 'een tester'} de app weer, dan vraagt de app om opnieuw aan te melden met een schone lei.</small></span></label>
+    ${everyone ? '<div class="field"><label for="del-confirm">Typ <b>VERWIJDER</b> om iedereen te verwijderen</label><input id="del-confirm" autocomplete="off" autocapitalize="characters"></div>' : ''}
+    <p class="sub" style="margin:0">Je kunt dit direct ongedaan maken; daarna staat het nog 30 dagen in het verborgen tabblad Prullenbak van je Sheet.</p>
+    <div class="row" style="justify-content:flex-end"><button class="btn" type="button" id="del-no">Annuleren</button><button class="btn danger" type="button" id="del-yes" ${everyone ? 'disabled' : ''}>Verwijderen</button></div></div>`;
+  document.body.appendChild(root);
+  const close = () => root.remove();
+  root.querySelector('#del-back').onclick = close; root.querySelector('#del-no').onclick = close;
+  const cf = root.querySelector('#del-confirm'); if (cf) cf.oninput = () => { root.querySelector('#del-yes').disabled = cf.value.trim().toUpperCase() !== 'VERWIJDER'; };
+  root.querySelector('#del-yes').onclick = async () => {
+    const scope = root.querySelector('[name="del-scope"]:checked').value; close();
+    await doDelete(everyone ? '*' : ids.join(','), ids, scope, ts.length);
+  };
+}
+async function doDelete(param, ids, scope, nTesters){
+  const snapshot = JSON.parse(JSON.stringify(data));      // voor ongedaan maken in de demo en voor direct terugzetten op het scherm
+  const drop = arr => (arr || []).filter(x => !ids.includes(x.tid));
+  data.events = drop(data.events); data.sessies = drop(data.sessies); data.feedback = drop(data.feedback); data.fouten = drop(data.fouten);
+  if (scope === 'all') data.testers = (data.testers || []).filter(t => !ids.includes(t.id));
+  view.sel = null; view.tester = null; render();
+  let batch = null;
+  if (!DEMO) {
+    const { key, url } = lsGet();
+    try { const j = await fetch(`${url}?key=${encodeURIComponent(key)}&action=delete&scope=${scope}&ids=${encodeURIComponent(param)}`).then(r => r.json());
+      if (j.error) { data = snapshot; render(); toast('Niet verwijderd: ' + j.error); return; } batch = j.batch; }
+    catch(e) { data = snapshot; render(); toast('Niet verwijderd, probeer het opnieuw'); return; }
+  }
+  const t = $('toast'); clearTimeout(toast.t);
+  t.innerHTML = `${scope === 'all' ? nTesters + (nTesters === 1 ? ' tester' : ' testers') + ' verwijderd' : 'Testdata verwijderd'}<button class="undo" type="button" id="undo">Ongedaan maken</button>`; t.hidden = false;
+  toast.t = setTimeout(() => t.hidden = true, 8000);
+  $('undo').onclick = async () => {
+    t.hidden = true; data = snapshot; render();
+    if (DEMO) { toast('Teruggezet'); return; }
+    const { key, url } = lsGet();
+    try { const j = await fetch(`${url}?key=${encodeURIComponent(key)}&action=undo&batch=${encodeURIComponent(batch)}`).then(r => r.json()); toast(j.error ? 'Terugzetten mislukt: ' + j.error : 'Teruggezet'); load(); }
+    catch(e) { toast('Terugzetten mislukt, kijk in de Prullenbak van je Sheet'); }
+  };
+  if (!DEMO) setTimeout(load, 1500);
 }
 async function copy(text, ok){
   try { await navigator.clipboard.writeText(text); toast(ok); }

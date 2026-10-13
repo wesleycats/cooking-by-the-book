@@ -22,7 +22,10 @@ async def main():
         ctx = await b.new_context(viewport={'width': 390, 'height': 844}, color_scheme='dark')
         pg = await ctx.new_page(); errs = []; posts = []
         pg.on('pageerror', lambda e: errs.append(str(e)))
+        server = {'status': 'active'}
         async def grab(route):
+            if route.request.method == 'GET' and 'action=status' in route.request.url:
+                await route.fulfill(status=200, body=json.dumps({'status': server['status']}), headers={'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'}); return
             try: posts.append(json.loads(route.request.post_data or '{}'))
             except Exception: posts.append({})
             await route.fulfill(status=200, body='ok')
@@ -80,6 +83,17 @@ async def main():
         ok('offline: feedback blijft in de wachtrij', q == 1, q)
         await ctx.set_offline(False); await pg.evaluate("window.dispatchEvent(new Event('online'))"); await pg.wait_for_timeout(1200)
         ok('weer online: wachtrij verstuurd', any(i.get('message') == 'offline bericht' for i in items()))
+        # verwijderd via het dashboard: de app merkt het en biedt een schone lei
+        await pg.goto(BASE + '/index.html#recept-koreaanse-kip-gehaktbowl'); await pg.wait_for_timeout(3200)
+        ok('recept openen zonder review: geen crash (bindReview)', not [e for e in errs if 'onchange' in e], errs[-2:])
+        ok('actieve tester: geen pop-up', await pg.locator('#tr-root').count() == 0)
+        server['status'] = 'deleted'
+        await pg.goto(BASE + '/index.html'); await pg.wait_for_timeout(3200)
+        ok('verwijderde tester: pop-up "opnieuw aanmelden"', await pg.locator('#tr-root #tr-go').count() == 1)
+        await pg.screenshot(path=os.path.join(SHOTS, 'reset-popup.png'))
+        await pg.click('#tr-go'); await pg.wait_for_timeout(1500)
+        ok('na opnieuw aanmelden: schone lei met welkomstkaart', await pg.locator('#tw').count() == 1 and await pg.evaluate("localStorage.getItem('kb-tester-id') === null && localStorage.getItem('kb-stats') === null"))
+        server['status'] = 'active'
         await ctx.close()
         # ---------- dashboard met voorbeelddata ----------
         for theme in ('light', 'dark'):
@@ -96,6 +110,24 @@ async def main():
             await pg.click('.tester'); await pg.wait_for_timeout(200)
             ok(f'[{theme}] dashboard: tester-tijdlijn', await pg.locator('.tl li.e').count() > 3)
             await pg.screenshot(path=os.path.join(SHOTS, f'{theme}-dash-tester.png'), full_page=True)
+            # verwijderen: één tester (alleen testdata), meerdere (tester en alles), ongedaan maken, iedereen met VERWIJDER
+            await pg.click('#t-del'); await pg.wait_for_timeout(150)
+            ok(f'[{theme}] dashboard: verwijder-dialoog voor één tester', await pg.locator('.modal [name="del-scope"]').count() == 2)
+            await pg.screenshot(path=os.path.join(SHOTS, f'{theme}-dash-delete.png'))
+            await pg.click('#del-yes'); await pg.wait_for_timeout(250)
+            ok(f'[{theme}] dashboard: alleen testdata → tester blijft', await pg.locator('.tester').count() == 5)
+            await pg.click('#sel-on'); await pg.locator('.tester').nth(0).click(); await pg.locator('.tester').nth(1).click(); await pg.wait_for_timeout(100)
+            ok(f'[{theme}] dashboard: selecteren toont actiebalk', '2 geselecteerd' in await pg.inner_text('.actbar'))
+            await pg.click('#sel-del'); await pg.check('[name="del-scope"][value="all"]'); await pg.click('#del-yes'); await pg.wait_for_timeout(250)
+            ok(f'[{theme}] dashboard: twee testers volledig verwijderd', await pg.locator('.tester').count() == 3)
+            await pg.click('#undo'); await pg.wait_for_timeout(250)
+            ok(f'[{theme}] dashboard: ongedaan maken zet ze terug', await pg.locator('.tester').count() == 5)
+            await pg.click('#sel-on'); await pg.click('#sel-all'); await pg.click('#sel-del'); await pg.wait_for_timeout(100)
+            ok(f'[{theme}] dashboard: iedereen verwijderen vraagt VERWIJDER', await pg.locator('#del-yes[disabled]').count() == 1)
+            await pg.fill('#del-confirm', 'verwijder'); await pg.check('[name="del-scope"][value="all"]'); await pg.click('#del-yes'); await pg.wait_for_timeout(250)
+            ok(f'[{theme}] dashboard: alles verwijderd → lege staat', await pg.locator('.tester').count() == 0)
+            await pg.click('#undo'); await pg.wait_for_timeout(250)
+            await pg.click('.tester')
             await pg.click('[data-tab="recepten"]'); await pg.wait_for_timeout(200)
             ok(f'[{theme}] dashboard: trechter per recept', await pg.locator('.funnel').count() >= 1)
             await pg.screenshot(path=os.path.join(SHOTS, f'{theme}-dash-recepten.png'), full_page=True)

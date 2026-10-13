@@ -50,6 +50,7 @@ function setup() {
     const sh = ss.getSheetByName(name) || ss.insertSheet(name);
     sh.getRange(1, 1, 1, cols.length).setValues([cols.map(c => c[1])]).setFontWeight('bold').setBackground('#e8f0e6');
     sh.setFrozenRows(1);
+    if (name === 'Testers') sh.getRange(2, cols.length, Math.max(sh.getMaxRows() - 1, 1), 1).setNumberFormat('@');
     for (const k of TIME_COLS[name] || []) sh.getRange(2, cols.findIndex(c => c[0] === k) + 1, Math.max(sh.getMaxRows() - 1, 1), 1).setNumberFormat(TIME_FMT);
     const by = NEWEST_FIRST[name];   // bestaande rijen eenmalig sorteren: nieuwste bovenaan
     if (by && sh.getLastRow() > 2) sh.getRange(2, 1, sh.getLastRow() - 1, cols.length).sort({ column: cols.findIndex(c => c[0] === by) + 1, ascending: false });
@@ -106,6 +107,7 @@ function doPost(e) {
   if (!/^[A-Z0-9]{1,8}-[A-Z0-9]{4}$/.test(t.id || '') || !Array.isArray(body.items)) return text_('bad tester');
   const items = body.items.slice(0, 100);
   const name = String(t.name || '').slice(0, 30), group = String(t.group || '').slice(0, 30);
+  if (tombstones_()[t.id]) return text_('deleted');   // verwijderd via het dashboard: de app vraagt de tester opnieuw aan te melden
   const lock = LockService.getScriptLock(); lock.waitLock(20000);
   try {
     const ss = SpreadsheetApp.getActive();
@@ -141,13 +143,18 @@ function upsertTester_(ss, id, name, group, body, items) {
   const day = Utilities.formatDate(now, TZ, 'yyyy-MM-dd');
   const f = sh.getRange('A:A').createTextFinder(id).matchEntireCell(true).findNext();
   if (!f) {
-    sh.appendRow([id, name, group, now, now, 1, items.length, String(body.device || ''), String(body.size || ''), String(body.version || ''), day]);
+    sh.appendRow([id, name, group, now, now, 1, items.length, String(body.device || ''), String(body.size || ''), String(body.version || ''), "'" + day]);
     return true;
   }
   const r = f.getRow(), row = sh.getRange(r, 1, 1, 11).getValues()[0];
-  const days = String(row[10] || '').split(',').filter(Boolean); if (!days.includes(day)) days.push(day);
-  sh.getRange(r, 1, 1, 11).setValues([[id, name || row[1], row[2] || group, row[3], now, days.length, Number(row[6] || 0) + items.length, String(body.device || row[7]), String(body.size || row[8]), String(body.version || row[9]), days.join(',')]]);
+  const days = dayList_(row[10]); if (!days.includes(day)) days.push(day);
+  sh.getRange(r, 1, 1, 11).setValues([[id, name || row[1], row[2] || group, row[3], now, days.length, Number(row[6] || 0) + items.length, String(body.device || row[7]), String(body.size || row[8]), String(body.version || row[9]), "'" + days.join(',')]]);
   return false;
+}
+
+function dayList_(v) {
+  if (v instanceof Date || Object.prototype.toString.call(v) === '[object Date]') return [Utilities.formatDate(v, TZ, 'yyyy-MM-dd')];
+  return String(v || '').split(',').map(x => x.trim()).filter(Boolean).map(x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : (isNaN(new Date(x)) ? '' : Utilities.formatDate(new Date(x), TZ, 'yyyy-MM-dd'))).filter(Boolean);
 }
 
 function upsertSession_(ss, tid, name, it) {
@@ -180,6 +187,7 @@ function hours_(cell, def) {
 /** Verstuurt een bundel zodra de oudste melding erin het ingestelde aantal uren oud is. Tijdtrigger elke 10 min. */
 function digestVersturen(force) {
   const p = PropertiesService.getScriptProperties();
+  try { opruimen_(); } catch (err) { console.warn('Opruimen mislukt: ' + err); }
   const kinds = [['urgent', hours_('B9', DEFAULT_HOURS.urgent), 4, '⚠️', 'dringende meldingen', ['warning']],
                  ['rest', hours_('B10', DEFAULT_HOURS.rest), 3, '📋', 'nieuwe meldingen', ['clipboard']]];
   for (const [name, hrs, prio, ic, label, tags] of kinds) {
@@ -251,6 +259,13 @@ function firstTime_(key, seconds) {
 /* ---------- dashboard ---------- */
 function doGet(e) {
   const p = e.parameter || {};
+  if (p.action === 'status') {                     // de app vraagt: besta ik nog? (geen sleutel nodig, geeft alleen dit terug)
+    const id = String(p.id || '');
+    if (!/^[A-Z0-9]{1,8}-[A-Z0-9]{4}$/.test(id)) return json_({ status: 'unknown' });
+    if (tombstones_()[id]) return json_({ status: 'deleted' });
+    const f = SpreadsheetApp.getActive().getSheetByName('Testers').getRange('A:A').createTextFinder(id).matchEntireCell(true).findNext();
+    return json_({ status: f ? 'active' : 'unknown' });
+  }
   if (!p.key || p.key !== PropertiesService.getScriptProperties().getProperty('DASHBOARD_KEY')) return json_({ error: 'Ongeldige sleutel' });
   const ss = SpreadsheetApp.getActive();
   if (p.action === 'mark') {                       // status van feedback of fout bijwerken vanuit het dashboard
@@ -263,9 +278,85 @@ function doGet(e) {
     if (p.prio != null) { if (!PRIO.includes(p.prio)) return json_({ error: 'Onbekende prioriteit' }); sh.getRange(f.getRow(), cols.indexOf('prio') + 1).setValue(p.prio); }
     return json_({ ok: true });
   }
+  if (p.action === 'delete') return json_(deleteTesters_(ss, String(p.ids || ''), p.scope === 'all' ? 'all' : 'data'));
+  if (p.action === 'undo') return json_(undoDelete_(ss, String(p.batch || '')));
   const out = { generated: new Date().toISOString() };
   for (const [name, cols] of Object.entries(TABS)) out[name.toLowerCase()] = rows_(ss, name, cols, name === 'Events' ? 8000 : 2000);
   return json_(out);
+}
+
+/* ---------- verwijderen (dashboard) ----------
+   scope 'data': alle testdata van de testers (events, sessies, feedback, fouten), de testers zelf blijven.
+   scope 'all': ook de testers; hun ID komt op een lijst, zodat de app ze vraagt opnieuw aan te melden.
+   Alles gaat eerst naar het verborgen tabblad Prullenbak (30 dagen), zodat het terug te zetten is. */
+const TID_COL = { Testers: 'id', Events: 'tid', Sessies: 'tid', Feedback: 'tid', Fouten: 'tid' };
+function tombstones_() { return JSON.parse(PropertiesService.getScriptProperties().getProperty('DELETED') || '{}'); }
+function trash_(ss) {
+  let sh = ss.getSheetByName('Prullenbak');
+  if (!sh) { sh = ss.insertSheet('Prullenbak'); sh.getRange(1, 1, 1, 5).setValues([['Verwijderd op', 'Batch', 'Tabblad', 'Tester-ID', 'Rij (JSON)']]).setFontWeight('bold'); sh.setFrozenRows(1); try { sh.hideSheet(); } catch (e) {} }
+  return sh;
+}
+function deleteTesters_(ss, idsParam, scope) {
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const all = idsParam === '*';
+    const ids = new Set(all ? [] : idsParam.split(',').map(x => x.trim()).filter(x => /^[A-Z0-9]{1,8}-[A-Z0-9]{4}$/.test(x)));
+    if (!all && !ids.size) return { error: 'Geen testers gekozen' };
+    const batch = shortId_(), now = new Date(), trash = [], removed = {}, removedIds = new Set();
+    for (const [tab, cols] of Object.entries(TABS)) {
+      if (!TID_COL[tab] || (tab === 'Testers' && scope !== 'all')) continue;
+      const sh = ss.getSheetByName(tab), last = sh.getLastRow(); if (last < 2) continue;
+      const ci = cols.findIndex(c => c[0] === TID_COL[tab]), width = cols.length;
+      const vals = sh.getRange(2, 1, last - 1, width).getValues(), keep = [];
+      for (const row of vals) {
+        const hit = all ? String(row[ci] || '') !== '' : ids.has(String(row[ci]));
+        if (hit) { trash.push([now, batch, tab, String(row[ci]), JSON.stringify(row)]); removedIds.add(String(row[ci])); } else keep.push(row);
+      }
+      removed[tab] = vals.length - keep.length;
+      if (!removed[tab]) continue;
+      sh.getRange(2, 1, last - 1, width).clearContent();
+      if (keep.length) sh.getRange(2, 1, keep.length, width).setValues(keep);
+    }
+    if (trash.length) { const t = trash_(ss); t.getRange(t.getLastRow() + 1, 1, trash.length, 5).setValues(trash); }
+    if (scope === 'all') {
+      const ts = tombstones_(); (all ? removedIds : ids).forEach(id => ts[id] = now.toISOString());
+      PropertiesService.getScriptProperties().setProperty('DELETED', JSON.stringify(ts));
+    }
+    return { ok: true, batch, removed, testers: (all ? removedIds : ids).size };
+  } finally { lock.releaseLock(); }
+}
+function undoDelete_(ss, batch) {
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const t = ss.getSheetByName('Prullenbak'); if (!t || t.getLastRow() < 2 || !batch) return { error: 'Niets om terug te zetten' };
+    const vals = t.getRange(2, 1, t.getLastRow() - 1, 5).getValues();
+    const mine = vals.filter(r => String(r[1]) === batch), rest = vals.filter(r => String(r[1]) !== batch);
+    if (!mine.length) return { error: 'Niets om terug te zetten' };
+    const byTab = {};
+    mine.forEach(r => (byTab[r[2]] = byTab[r[2]] || []).push(JSON.parse(r[4]).map((v, i) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v) ? new Date(v) : v)));
+    for (const [tab, rows] of Object.entries(byTab)) {
+      const sh = ss.getSheetByName(tab); top_(sh, rows, tab);
+      const by = NEWEST_FIRST[tab]; if (by && sh.getLastRow() > 2) sh.getRange(2, 1, sh.getLastRow() - 1, TABS[tab].length).sort({ column: TABS[tab].findIndex(c => c[0] === by) + 1, ascending: false });
+    }
+    t.getRange(2, 1, vals.length, 5).clearContent();
+    if (rest.length) t.getRange(2, 1, rest.length, 5).setValues(rest);
+    const ts = tombstones_(); new Set(mine.map(r => String(r[3]))).forEach(id => delete ts[id]);
+    PropertiesService.getScriptProperties().setProperty('DELETED', JSON.stringify(ts));
+    return { ok: true, restored: mine.length };
+  } finally { lock.releaseLock(); }
+}
+/** Ruimt de prullenbak op (ouder dan 30 dagen) en vergeten verwijder-lijst (ouder dan 90 dagen). Draait mee met de trigger. */
+function opruimen_() {
+  const p = PropertiesService.getScriptProperties(), today = new Date().toISOString().slice(0, 10);
+  if (p.getProperty('CLEANED') === today) return; p.setProperty('CLEANED', today);
+  const t = SpreadsheetApp.getActive().getSheetByName('Prullenbak');
+  if (t && t.getLastRow() > 1) {
+    const vals = t.getRange(2, 1, t.getLastRow() - 1, 5).getValues(), keep = vals.filter(r => Date.now() - new Date(r[0]).getTime() < 30 * 864e5);
+    if (keep.length < vals.length) { t.getRange(2, 1, vals.length, 5).clearContent(); if (keep.length) t.getRange(2, 1, keep.length, 5).setValues(keep); }
+  }
+  const ts = tombstones_(); let changed = false;
+  for (const id in ts) if (Date.now() - Date.parse(ts[id]) > 90 * 864e5) { delete ts[id]; changed = true; }
+  if (changed) p.setProperty('DELETED', JSON.stringify(ts));
 }
 
 function rows_(ss, name, cols, max) {

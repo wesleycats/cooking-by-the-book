@@ -282,7 +282,7 @@ function paintPlate(canvas, seed){
 function go(hash){ if (location.hash === '#'+hash || (!hash && !location.hash)) render(); else location.hash = hash; }
 let draftFrom = null, carryServings = null;
 window.addEventListener('hashchange', () => { const c = carryServings; carryServings = null; if (location.hash !== '#nieuw') draftFrom = null; resetView(); if (c) view.servings = c; render(); window.scrollTo(0,0); });
-function resetView(){ if (cookEl) { cookEl.remove(); cookEl = null; document.documentElement.style.overflow = ''; } sheetOpen = false; menuOpen = false; moreOpen = false; view.servings=null; view.checked=new Set(); view.prepped=new Set(); view.tasks=new Set(); view.done=new Set(); view.cook=false; view.cur=0; view.frzOpen=false; view.loadedFor=null; releaseWake(); }
+function resetView(){ if (cookEl) { cookEl.remove(); cookEl = null; document.documentElement.style.overflow = ''; } sheetOpen = false; menuOpen = false; moreOpen = false; view.servings=null; view.checked=new Set(); view.prepped=new Set(); view.tasks=new Set(); view.done=new Set(); view.cook=false; view.cur=0; view.frzOpen=false; view.loadedFor=null; view.reviewOpen=false; view.reviewSid=null; releaseWake(); }
 document.getElementById('home-btn').onclick = () => go('');
 newBtn.onclick = () => go('nieuw');
 const cameFrom = {};
@@ -400,7 +400,7 @@ function bindReview(r){
   const open = sid => { view.reviewSid = sid; view.reviewOpen = true; rerender(r); requestAnimationFrame(() => reveal($('review'))); };
   const ed = $('rev-edit'); if (ed) ed.onclick = () => open(null);
   app.querySelectorAll('[data-redit]').forEach(b => b.onclick = () => open(b.dataset.redit));
-  if (!view.reviewOpen) return;
+  if (!view.reviewOpen || !$('rev-note')) return;   // the review block is only drawn when this recipe has a review
   // every change goes to the session; the latest session also updates the recipe's own review
   const sess = () => reviewSession(r), isLatest = () => !sess() || sess().id === latestSession(r)?.id;
   const saveNote = () => { const v = $('rev-note').value.trim(), s = sess();
@@ -1384,7 +1384,7 @@ function bindArchive(){
 }
 
 /* ---------- testmenu ---------- */
-const APP_VERSION = 'v46 · 13 okt 2026';
+const APP_VERSION = 'v47 · 13 okt 2026';
 let lastSync = null, syncErr = null, wakeState = 'nog niet gebruikt', vibrateState = 'nog niet getest';
 const ago = t => { if (!t) return 'nog niet'; const s = Math.round((Date.now() - t) / 1000); return s < 60 ? `${s} s geleden` : s < 3600 ? `${Math.round(s/60)} min geleden` : `${Math.round(s/3600)} uur geleden`; };
 function testVibrate(){ let ok = false; try { ok = !!navigator.vibrate?.([120, 80, 120]); } catch(e) {} vibrateState = ok ? 'werkt' : 'geblokkeerd'; return ok; }
@@ -1612,6 +1612,31 @@ function bindTesterWelcome(){
     flushEvents(); renderLibrary(); toast(`Welkom ${name}! Je test-ID is ${lsGet('kb-tester-id', '')}`);
   };
 }
+// removed by Wes in the dashboard? Ask the server (GET, readable answer) and offer a clean restart.
+async function checkTesterStatus(){
+  if (!TESTER?.endpoint || !testerConsent() || !navigator.onLine || document.getElementById('tr-root')) return;
+  if (Date.now() - (checkTesterStatus.at || 0) < 10 * 60 * 1000) return; checkTesterStatus.at = Date.now();
+  try {
+    const j = await fetch(`${TESTER.endpoint}?action=status&id=${encodeURIComponent(lsGet('kb-tester-id', ''))}`, { cache:'no-store' }).then(r => r.json());
+    if (j.status === 'deleted') showTesterReset();
+  } catch(e) { /* offline or endpoint unreachable: try again later */ }
+}
+function resetTester(){
+  for (const k of ['kb-tester-id', 'kb-tester-name', 'kb-tester-welcomed', 'kb-ev-queue', 'kb-sess-sent', 'kb-progress', 'kb-stats', 'kb-timers']) { try { localStorage.removeItem(k); } catch(e) {} }
+  location.hash = ''; location.reload();
+}
+function showTesterReset(){
+  const root = document.createElement('div'); root.id = 'tr-root';
+  root.innerHTML = `<div class="sheet-back" style="z-index:70"></div>
+    <div class="sheet" role="alertdialog" aria-labelledby="tr-h" style="z-index:71">
+      <div class="sheet-head"><div class="grab" aria-hidden="true"></div><div class="sh-row"><h3 id="tr-h">Je testgegevens zijn gewist</h3></div></div>
+      <div class="fb-body"><p class="cook-sub" style="margin:0">Wes heeft je gegevens uit de Proefkeuken verwijderd. Wil je weer meedoen? Dan begin je met een schone lei en kies je opnieuw een naam.</p>
+        <button class="btn primary" type="button" id="tr-go">Opnieuw aanmelden</button>
+        <button class="btn ghost" type="button" id="tr-later">Niet nu</button></div></div>`;
+  document.body.appendChild(root);
+  root.querySelector('#tr-go').onclick = resetTester;
+  root.querySelector('#tr-later').onclick = () => { lsSet('kb-ev-queue', []); root.remove(); };   // nothing is sent until they sign up again
+}
 if (TESTER) {
   const g = new URLSearchParams(location.search).get('g');
   if (g && !lsGet('kb-tester-group', '')) lsSet('kb-tester-group', g.replace(/[^\w -]/g, '').slice(0, 30));
@@ -1622,6 +1647,8 @@ if (TESTER) {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushEvents(); });
   setInterval(flushEvents, 30000);
   setTimeout(() => { track('open'); flushEvents(); }, 1500);
+  setTimeout(checkTesterStatus, 2500);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkTesterStatus(); });
   const fbBtn = document.getElementById('fb-btn'); if (fbBtn) { fbBtn.hidden = false; fbBtn.onclick = openFeedback; }
   const tb = document.getElementById('test-btn'); if (tb) tb.hidden = true;
   document.documentElement.classList.add('tester');
