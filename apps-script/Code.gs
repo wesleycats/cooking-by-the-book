@@ -26,6 +26,10 @@ const NOTIFY = { errors: true, feedback: true, newTester: true };
 // Mail (B8): reserve (alleen als push mislukt), altijd (push én mail) of nee. Dezelfde bundels en tijden gelden voor mail.
 const BUDGET = { pushPerDay: 60, mailPerDay: 40 };
 const DEFAULT_HOURS = { urgent: 1, rest: 6 };
+// logboeken: nieuwste bovenaan, tijd tot op de seconde
+const TIME_COLS = { Events: ['at'], Feedback: ['at'], Fouten: ['at'], Sessies: ['updated'], Testers: ['first', 'last'] };
+const NEWEST_FIRST = { Events: 'at', Feedback: 'at', Fouten: 'at', Sessies: 'updated' };
+const TIME_FMT = 'dd-mm-yyyy HH:mm:ss';
 // prioriteit per feedbacksoort (ntfy: 5 = urgent, 4 = hoog, 3 = normaal met geluid, 2 = stil)
 const FB_PRIO = { 'Werkt niet': [4, 'bug', '🐞'], 'Snap ik niet': [3, 'question', '❓'], 'Idee': [3, 'bulb', '💡'], 'Mooi': [2, 'heart', '♥'] };
 
@@ -46,6 +50,9 @@ function setup() {
     const sh = ss.getSheetByName(name) || ss.insertSheet(name);
     sh.getRange(1, 1, 1, cols.length).setValues([cols.map(c => c[1])]).setFontWeight('bold').setBackground('#e8f0e6');
     sh.setFrozenRows(1);
+    for (const k of TIME_COLS[name] || []) sh.getRange(2, cols.findIndex(c => c[0] === k) + 1, Math.max(sh.getMaxRows() - 1, 1), 1).setNumberFormat(TIME_FMT);
+    const by = NEWEST_FIRST[name];   // bestaande rijen eenmalig sorteren: nieuwste bovenaan
+    if (by && sh.getLastRow() > 2) sh.getRange(2, 1, sh.getLastRow() - 1, cols.length).sort({ column: cols.findIndex(c => c[0] === by) + 1, ascending: false });
   }
   const first = ss.getSheetByName('Blad1') || ss.getSheetByName('Sheet1');
   if (first && first.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(first);
@@ -149,7 +156,7 @@ function upsertSession_(ss, tid, name, it) {
   const row = [sid, tid, name, String(it.rid || ''), String(it.title || ''), String(it.date || ''), it.servings || '', it.min ?? '', it.recipeMin ?? '', it.rating ?? '', (it.chips || []).join(', '), String(it.note || '').slice(0, 1000), adj, new Date()];
   const f = sh.getRange('A:A').createTextFinder(sid).matchEntireCell(true).findNext();
   if (f && sh.getRange(f.getRow(), 2).getValue() === tid) sh.getRange(f.getRow(), 1, 1, row.length).setValues([row]);
-  else sh.appendRow(row);
+  else top_(sh, [row], 'Sessies');
 }
 
 /* ---------- meldingen (ntfy) ---------- */
@@ -264,14 +271,21 @@ function doGet(e) {
 function rows_(ss, name, cols, max) {
   const sh = ss.getSheetByName(name); if (!sh) return [];
   const last = sh.getLastRow(); if (last < 2) return [];
-  const start = Math.max(2, last - max + 1);
-  return sh.getRange(start, 1, last - start + 1, cols.length).getValues().map(v => {
+  const n = Math.min(max, last - 1);                 // nieuwste staan bovenaan: de eerste n rijen
+  return sh.getRange(2, 1, n, cols.length).getValues().map(v => {
     const o = {}; cols.forEach(([k], i) => { o[k] = v[i] instanceof Date ? v[i].toISOString() : v[i]; }); return o;
   });
 }
 
 /* ---------- hulpjes ---------- */
-function append_(ss, name, rows) { if (!rows.length) return; const sh = ss.getSheetByName(name); sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows); }
+function append_(ss, name, rows) { if (rows.length) top_(ss.getSheetByName(name), rows.slice().reverse(), name); }
+/** Zet rijen direct onder de kop (nieuwste bovenaan), in de opmaak van gewone rijen, niet die van de kop. */
+function top_(sh, rows, name) {
+  sh.insertRowsBefore(2, rows.length);
+  const r = sh.getRange(2, 1, rows.length, rows[0].length);
+  r.setFontWeight('normal').setBackground(null).setValues(rows);
+  for (const k of TIME_COLS[name] || []) { const i = TABS[name].findIndex(c => c[0] === k); if (i >= 0) sh.getRange(2, i + 1, rows.length, 1).setNumberFormat(TIME_FMT); }
+}
 function parseDate_(s) { const d = new Date(s); return isNaN(d) ? new Date() : d; }
 function shortId_() { return Utilities.getUuid().slice(0, 8); }
 function text_(s) { return ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.TEXT); }

@@ -20,8 +20,9 @@ function mkSheet(name){ const rows = []; return {
       setValue(v){ rows[r0] = rows[r0] || []; rows[r0][c0] = v; return this; },
       getValue(){ return (rows[r0] || [])[c0]; },
       getValues(){ return [...Array(nr)].map((_, i) => [...Array(nc)].map((_, j) => (rows[r0+i] || [])[c0+j] ?? '')); },
-      setFontWeight(){ return this; }, setBackground(){ return this; } }; },
-  appendRow(r){ rows.push(r); }, setFrozenRows(){}, clear(){ rows.length = 0; }, setColumnWidth(){} }; }
+      setFontWeight(){ return this; }, setBackground(){ return this; }, setNumberFormat(){ return this; },
+      sort({ column, ascending }){ const part = rows.slice(r0, r0 + nr); part.sort((x, y) => { const a = x[column - 1], b = y[column - 1]; return (a > b ? 1 : a < b ? -1 : 0) * (ascending ? 1 : -1); }); rows.splice(r0, nr, ...part); return this; } }; },
+  appendRow(r){ rows.push(r); }, getMaxRows: () => Math.max(rows.length, 1000), insertRowsBefore(r, n){ rows.splice(r - 1, 0, ...Array.from({ length: n }, () => [])); }, setFrozenRows(){}, clear(){ rows.length = 0; }, setColumnWidth(){} }; }
 const ss = { setSpreadsheetTimeZone(){}, getSheetByName: n => sheets[n] || null, insertSheet: n => (sheets[n] = mkSheet(n)), getSheets: () => Object.values(sheets), deleteSheet(){} };
 const props = {}, cache = {};
 const ctx = {
@@ -62,7 +63,8 @@ assert(String(sheets.Instellingen.rows[8][1]) === '1' && String(sheets.Instellin
 assert(post({ tester: { id: 'bad' }, items: [] }) === 'bad tester', 'ongeldige tester geweigerd');
 assert(post({ tester: T, version: 'v46', device: 'Android', size: '412×915', items: [{ kind: 'open', at: now() }, { kind: 'aanmelding', at: now() }, { kind: 'stap', at: now(), rid: 'r1', i: 0, n: 6, screen: 'kookmodus' }] }) === 'ok', 'batch aangenomen');
 assert(sheets.Testers.rows.length === 2 && sheets.Testers.rows[1][0] === T.id, 'tester toegevoegd');
-assert(sheets.Events.rows.length === 4 && sheets.Events.rows[3][5] === 0, 'events met stapnummer');
+assert(sheets.Events.rows.length === 4 && sheets.Events.rows[1][3] === 'stap' && sheets.Events.rows[1][5] === 0 && sheets.Events.rows[3][3] === 'open', 'events: nieuwste bovenaan, met stapnummer');
+assert(Object.prototype.toString.call(sheets.Events.rows[1][0]) === '[object Date]', 'events: tijd is een echte datum/tijd');
 assert(notes.length === 0 && JSON.parse(props.Q_REST).length === 1, 'nieuwe tester: niet direct, in de overige bundel');
 
 // ---------- urgent per uur, overig per 6 uur ----------
@@ -107,6 +109,10 @@ props.PUSH_DAY = '{}';
 // ---------- sessies, dashboard ----------
 post({ tester: T, items: [{ kind: 'sessie', at: now(), sid: 's1', rid: 'r1', title: 'Pasta', rating: 5, note: 'top' }] });
 assert(sheets.Sessies.rows.length === 2 && sheets.Sessies.rows[1][9] === 5 && sheets.Sessies.rows[1][11] === 'top', 'sessie bijgewerkt (geen dubbele rij)');
+post({ tester: T, items: [{ kind: 'feedback', at: '2030-01-01T10:00:00Z', type: 'Idee', message: 'nieuwste' }] });
+assert(sheets.Feedback.rows[1][5] === 'nieuwste', 'feedback: nieuwste bovenaan');
+sheets.Events.rows.push([new Date('2000-01-01'), 'X', 'x', 'oud', '', '', '', '']); ctx.setup();
+assert(sheets.Events.rows[sheets.Events.rows.length - 1][3] === 'oud' && sheets.Events.rows[1][0] >= sheets.Events.rows[2][0], 'setup sorteert bestaande rijen: nieuwste bovenaan');
 assert(get({ key: 'fout' }).error, 'dashboard zonder juiste sleutel geweigerd');
 const d = get({ key: props.DASHBOARD_KEY });
 assert(d.testers.length === 1 && d.feedback.length >= 4 && d.fouten.length === 2 && d.sessies.length === 1, 'dashboarddata compleet');
