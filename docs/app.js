@@ -615,10 +615,12 @@ function stepHtml(s,i,r,factor){
 
 /* ---------- cook mode (full screen) ---------- */
 const STOP = new Set(['verse','vers','groene','gewone','volkoren','fijn','fijngehakt','geraspt','gehalveerd','blokjes','halve','maantjes','optioneel','uitgelekt','blik','voor','het','pastawater','rode','grote','kleine','extra','naar','smaak','teentje','teentjes','plus','sap','rasp','met','een','van','tot']);
+const SHORT_ING = new Set(['ui']);   // ingredients shorter than 3 letters that still count
+const wordsOf = t => (t.match(/[a-z]{2,}/g) || []).filter(w => w.length > 2 || SHORT_ING.has(w));
 function neededFor(r, s){
-  const words = (s.title+' '+s.text).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').match(/[a-z]{3,}/g) || [];
+  const words = wordsOf((s.title+' '+s.text).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''));
   return (r.ingredients||[]).map((ing,i)=>[ing,i]).filter(([ing]) => {
-    const keys = ing.name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').split(/[,(]/)[0].match(/[a-z]{3,}/g)?.filter(k=>!STOP.has(k)) || [];
+    const keys = wordsOf(ing.name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').split(/[,(]/)[0]).filter(k=>!STOP.has(k));
     return keys.some(k => words.some(w => !STOP.has(w) && (w===k || (w.length>=4 && (k.includes(w) || w.includes(k))) || (w.length===3 && k.startsWith(w)))));
   });
 }
@@ -1317,7 +1319,7 @@ function bindAsk(){
 
 /* ---------- receptenarchief: veilige kopie, los van wat het kookboek toont ---------- */
 let archive = [], archiveReady = false;
-const RECIPE_KEYS = ['title','description','servings','minutes','prep','cleanup','keeps','tags','favorite','ingredients','steps','notes','nutrition','freeze','info','cost','family','variant','variantOrder','createdAt','updatedAt'];
+const RECIPE_KEYS = ['title','description','servings','minutes','prep','cleanup','keeps','tags','favorite','status','source','ingredients','steps','notes','nutrition','freeze','info','cost','family','variant','variantOrder','createdAt','updatedAt'];   // status + source (herkomst: {name, author, url, importedAt}) gaan mee bij import/export/archief
 const cleanRecipe = r => Object.fromEntries(RECIPE_KEYS.filter(k => r[k] !== undefined).map(k => [k, r[k]]));
 const sameRecipe = (a, b) => JSON.stringify(cleanRecipe(a)) === JSON.stringify(cleanRecipe(b));
 async function backupAll(){
@@ -1384,7 +1386,7 @@ function bindArchive(){
 }
 
 /* ---------- testmenu ---------- */
-const APP_VERSION = 'v47 · 13 okt 2026';
+const APP_VERSION = 'v48 · 13 okt 2026';
 let lastSync = null, syncErr = null, wakeState = 'nog niet gebruikt', vibrateState = 'nog niet getest';
 const ago = t => { if (!t) return 'nog niet'; const s = Math.round((Date.now() - t) / 1000); return s < 60 ? `${s} s geleden` : s < 3600 ? `${Math.round(s/60)} min geleden` : `${Math.round(s/3600)} uur geleden`; };
 function testVibrate(){ let ok = false; try { ok = !!navigator.vibrate?.([120, 80, 120]); } catch(e) {} vibrateState = ok ? 'werkt' : 'geblokkeerd'; return ok; }
@@ -1894,6 +1896,7 @@ function renderEditor(r){
       info: document.getElementById('f-info').value.split('\n').map(l=>{ l=l.trim(); if(!l) return null; const i=l.indexOf(':'); return i>0 ? {label:l.slice(0,i).trim(), value:l.slice(i+1).trim()} : {label:'Info', value:l}; }).filter(Boolean),
       favorite: !!r.favorite,
       ...(r.variantOrder!=null?{variantOrder:r.variantOrder}:{}),
+      ...(r.source?{source:r.source}:{}),   // herkomst blijft bewaard bij bewerken
       createdAt: r.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
