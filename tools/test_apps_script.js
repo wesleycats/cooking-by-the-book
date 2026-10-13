@@ -36,7 +36,7 @@ const ctx = {
   Session: { getEffectiveUser: () => ({ getEmail: () => 'wes@example.com' }) },
   ScriptApp: { getProjectTriggers: () => triggers, newTrigger: h => ({ timeBased: () => ({ everyMinutes: n => ({ create: () => triggers.push({ getHandlerFunction: () => h, n }) }) }) }) },
   Utilities: { formatDate: (d, tz, f) => f === 'yyyy-MM-dd' ? d.toISOString().slice(0, 10) : d.toISOString(), getUuid: () => Math.random().toString(16).slice(2) + 'abcdefgh', base64Encode: x => Buffer.from(x).toString('base64'), computeDigest: (a, s) => [...require('crypto').createHash('md5').update(s).digest()], DigestAlgorithm: { MD5: 1 } },
-  ContentService: { createTextOutput: s => ({ s, setMimeType(){ return this; } }), MimeType: { TEXT: 1, JSON: 2 } },
+  ContentService: { createTextOutput: s => ({ s, setMimeType(){ return this; } }), MimeType: { TEXT: 1, JSON: 2, JAVASCRIPT: 3 } },
   console: { log(){}, warn(){}, error(){} }
 };
 vm.createContext(ctx); vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), ctx);
@@ -52,9 +52,14 @@ assert(['Events', 'Feedback', 'Fouten', 'Instellingen', 'Sessies', 'Testers'].ev
 assert(props.NTFY_TOPIC && props.DASHBOARD_KEY && notes.length === 1, 'setup: kanaal, sleutel en testmelding');
 assert(triggers.length === 1 && triggers[0].getHandlerFunction() === 'digestVersturen', 'setup maakt de bundel-trigger');
 ctx.setup(); assert(triggers.length === 1, 'opnieuw setup: geen dubbele trigger');
-sheets.Instellingen.rows[3][1] = 'https://script.google.com/x/exec'; sheets.Instellingen.rows[4][1] = 'https://x/dashboard.html#k=K&u=U'; sheets.Instellingen.rows[6][1] = 'tk_abc123';
+sheets.Instellingen.rows[3][1] = 'https://script.google.com/x/exec'; sheets.Instellingen.rows[6][1] = 'tk_abc123';
 ctx.setup(); assert(sheets.Instellingen.rows[3][1] === 'https://script.google.com/x/exec' && sheets.Instellingen.rows[6][1] === 'tk_abc123', 'setup bewaart web-app-URL en token');
-sheets.Instellingen.rows[4][1] = 'https://x/dashboard.html#k=K&u=U';
+assert(String(sheets.Instellingen.rows[4][1]).startsWith('https://wesleycats.github.io/cooking-by-the-book/dashboard.html#k=' + props.DASHBOARD_KEY + '&u=https%3A%2F%2Fscript.google.com'), 'B5: dashboardlink als tekst (geen formule)');
+sheets.Instellingen.rows[3][1] = 'https://script.google.com/macros/s/NIEUW/exec';
+ctx.onEdit({ range: { getSheet: () => ({ getName: () => 'Instellingen' }), getRow: () => 4, getColumn: () => 2 } });
+assert(String(sheets.Instellingen.rows[4][1]).includes('NIEUW'), 'B4 aanpassen werkt de link in B5 meteen bij');
+sheets.Instellingen.rows[3][1] = 'https://script.google.com/x/exec'; ctx.onEdit({ range: { getSheet: () => ({ getName: () => 'Instellingen' }), getRow: () => 4, getColumn: () => 2 } });
+assert(/^cb_1\(\{"error"/.test(ctx.doGet({ parameter: { key: 'fout', callback: 'cb_1' } }).s) && !/^x\(/.test(ctx.doGet({ parameter: { key: 'fout', callback: 'x);alert(1' } }).s), 'JSONP: callback werkt, onveilige naam geweigerd');
 notes.length = 0;
 
 // ---------- ontvangen ----------

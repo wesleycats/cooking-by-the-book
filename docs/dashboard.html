@@ -279,7 +279,25 @@ const nl1 = x => x == null ? '–' : x.toFixed(1).replace('.', ',');
 
 let data = null, recipes = [], view = { tester: null, ff: 'open', ft: '' }, loading = false;
 
-/* ---------- gegevens ophalen ---------- */
+/* ---------- gegevens ophalen ----------
+   Eerst gewoon fetch. Blokkeert de browser dat (adblocker, privacy-extensie, Brave/Edge-bescherming), dan via JSONP:
+   het script geeft dan JavaScript terug in een <script>-tag, waar die blokkade niet voor geldt. */
+let preferJsonp = false;
+function jsonp(full){
+  return new Promise((res, rej) => {
+    const cb = 'cbtb_' + Math.random().toString(36).slice(2), el = document.createElement('script');
+    const done = () => { clearTimeout(t); delete window[cb]; el.remove(); };
+    const t = setTimeout(() => { done(); rej(new Error('geen antwoord (time-out)')); }, 25000);
+    window[cb] = d => { done(); res(d); };
+    el.onerror = () => { done(); rej(new Error('ook de reserve-methode is geblokkeerd')); };
+    el.src = full + '&callback=' + cb; document.head.appendChild(el);
+  });
+}
+async function api(q = ''){
+  const { key, url } = lsGet(), full = `${url}?key=${encodeURIComponent(key)}${q}`;
+  if (!preferJsonp) { try { return await fetch(full, { cache:'no-store' }).then(r => r.json()); } catch(e) { preferJsonp = true; } }
+  return jsonp(full);
+}
 async function load(){
   if (loading) return; loading = true; $('reload').classList.add('spin');
   try {
@@ -289,7 +307,7 @@ async function load(){
       const { key, url } = lsGet();
       if (!key || !url) { data = null; renderSetup(); return; }
       let j;
-      try { j = await fetch(url + '?key=' + encodeURIComponent(key), { cache:'no-store' }).then(r => r.json()); }
+      try { j = await api(); }
       catch(e) { throw new Error('ophalen: ' + e.message); }
       if (j.error) { renderSetup(j.error); return; }
       data = j;
@@ -588,9 +606,8 @@ function bind(d){
     const src = (tb === 'Fouten' ? data.fouten : data.feedback).find(x => (x.fid || x.eid) === id); if (src) Object.assign(src, patch);
     const y = scrollY; render(); scrollTo(0, y); toast(msg);
     if (DEMO) return;
-    const { key, url } = lsGet();
     const q = Object.entries(patch).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join('');
-    try { const j = await fetch(`${url}?key=${encodeURIComponent(key)}&action=mark&tab=${encodeURIComponent(tb)}&id=${encodeURIComponent(id)}${q}`).then(r => r.json()); if (j.error) toast('Niet opgeslagen: ' + j.error); } catch(e) { toast('Niet opgeslagen, probeer het opnieuw'); }
+    try { const j = await api(`&action=mark&tab=${encodeURIComponent(tb)}&id=${encodeURIComponent(id)}${q}`); if (j.error) toast('Niet opgeslagen: ' + j.error); } catch(e) { toast('Niet opgeslagen, probeer het opnieuw'); }
   };
   m.querySelectorAll('[data-setprio]').forEach(b => b.onclick = () => { const [tb, id, pr] = b.dataset.setprio.split('|'); save(tb + '|' + id, { prio: pr }, 'Prioriteit ' + pr); });
   m.querySelectorAll('[data-setstatus]').forEach(sel => sel.onchange = () => save(sel.dataset.setstatus, { status: sel.value }, 'Status: ' + sel.options[sel.selectedIndex].text));
@@ -643,8 +660,7 @@ async function doDelete(param, ids, scope, nTesters){
   view.sel = null; view.tester = null; render();
   let batch = null;
   if (!DEMO) {
-    const { key, url } = lsGet();
-    try { const j = await fetch(`${url}?key=${encodeURIComponent(key)}&action=delete&scope=${scope}&ids=${encodeURIComponent(param)}`).then(r => r.json());
+    try { const j = await api(`&action=delete&scope=${scope}&ids=${encodeURIComponent(param)}`);
       if (j.error) { data = snapshot; render(); toast('Niet verwijderd: ' + j.error); return; } batch = j.batch; }
     catch(e) { data = snapshot; render(); toast('Niet verwijderd, probeer het opnieuw'); return; }
   }
@@ -654,8 +670,7 @@ async function doDelete(param, ids, scope, nTesters){
   $('undo').onclick = async () => {
     t.hidden = true; data = snapshot; render();
     if (DEMO) { toast('Teruggezet'); return; }
-    const { key, url } = lsGet();
-    try { const j = await fetch(`${url}?key=${encodeURIComponent(key)}&action=undo&batch=${encodeURIComponent(batch)}`).then(r => r.json()); toast(j.error ? 'Terugzetten mislukt: ' + j.error : 'Teruggezet'); load(); }
+    try { const j = await api(`&action=undo&batch=${encodeURIComponent(batch)}`); toast(j.error ? 'Terugzetten mislukt: ' + j.error : 'Teruggezet'); load(); }
     catch(e) { toast('Terugzetten mislukt, kijk in de Prullenbak van je Sheet'); }
   };
   if (!DEMO) setTimeout(load, 1500);

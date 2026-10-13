@@ -69,13 +69,14 @@ function setup() {
     ['Abonneren', 'Installeer de app "ntfy" → + → vul het meldingskanaal hierboven in (server ntfy.sh)'],
     ['Dashboardsleutel', props.getProperty('DASHBOARD_KEY')],
     ['Web-app-URL', keepUrl.startsWith('http') ? keepUrl : '(plak hier de /exec-URL na Implementeren)'],
-    ['Dashboard', '=IF(LEFT(B4,4)="http","https://wesleycats.github.io/cooking-by-the-book/dashboard.html#k="&B3&"&u="&ENCODEURL(B4),"vul eerst B4 in")'],
+    ['Dashboard', '(verschijnt zodra B4 is ingevuld)'],
     ['Let op', 'Deel de sleutel, het kanaal en de token niet: wie ze heeft, ziet de testgegevens of je meldingen.'],
     ['ntfy-token (optioneel)', keepToken || '(leeg = zonder account; plak hier een gratis ntfy.sh-token, begint met tk_)'],
     ['Mail', /^(altijd|nee)$/i.test(keepMail) ? keepMail.toLowerCase() : 'reserve'],
     ['Urgent bundelen: elke … uur', keepU !== '' ? keepU : DEFAULT_HOURS.urgent],
     ['Overig bundelen: elke … uur', keepR !== '' ? keepR : DEFAULT_HOURS.rest]
   ]);
+  linkBijwerken_();
   set.getRange(8, 3, 3, 1).setValues([
     ['reserve = alleen als de pushmelding mislukt · altijd = push én mail · nee = geen mail'],
     ['Fouten en "Werkt niet". Getal in uren, bv. 1 of 0,5. 0 = direct. Geldt voor push én mail.'],
@@ -247,6 +248,17 @@ function testMelding() {
   console.log(ok ? 'Aangekomen (push, of per mail als push niet lukte: zie waarschuwing hierboven).' : 'Niet aangekomen: zie de waarschuwingen hierboven.');
 }
 
+/** Schrijft de dashboardlink in B5 (geen formule: werkt in elke taal-instelling van Sheets). */
+const DASH_BASE = 'https://wesleycats.github.io/cooking-by-the-book/dashboard.html';
+function linkBijwerken_() {
+  const set = SpreadsheetApp.getActive().getSheetByName('Instellingen'); if (!set) return;
+  const url = String(set.getRange('B4').getValue() || '').trim(), key = String(set.getRange('B3').getValue() || '').trim();
+  set.getRange('B5').setValue(/^https:\/\/script\.google\.com\/.+\/exec$/.test(url) && key ? DASH_BASE + '#k=' + key + '&u=' + encodeURIComponent(url) : '(verschijnt zodra B4 is ingevuld met de /exec-URL)');
+}
+/** Eenvoudige trigger: B4 aangepast → link in B5 meteen bijwerken. */
+function onEdit(e) {
+  try { const r = e && e.range; if (r && r.getSheet().getName() === 'Instellingen' && r.getRow() <= 4 && r.getColumn() === 2) linkBijwerken_(); } catch (err) {}
+}
 function dashboardUrl_() {
   const set = SpreadsheetApp.getActive().getSheetByName('Instellingen'); if (!set) return '';
   const v = String(set.getRange('B5').getValue() || ''); return v.startsWith('http') ? v : '';
@@ -259,6 +271,7 @@ function firstTime_(key, seconds) {
 /* ---------- dashboard ---------- */
 function doGet(e) {
   const p = e.parameter || {};
+  CALLBACK = /^[A-Za-z_$][\w$]{0,40}$/.test(p.callback || '') ? p.callback : '';
   if (p.action === 'status') {                     // de app vraagt: besta ik nog? (geen sleutel nodig, geeft alleen dit terug)
     const id = String(p.id || '');
     if (!/^[A-Z0-9]{1,8}-[A-Z0-9]{4}$/.test(id)) return json_({ status: 'unknown' });
@@ -380,4 +393,8 @@ function top_(sh, rows, name) {
 function parseDate_(s) { const d = new Date(s); return isNaN(d) ? new Date() : d; }
 function shortId_() { return Utilities.getUuid().slice(0, 8); }
 function text_(s) { return ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.TEXT); }
-function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+let CALLBACK = '';
+function json_(o) {
+  if (CALLBACK) return ContentService.createTextOutput(CALLBACK + '(' + JSON.stringify(o) + ');').setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}

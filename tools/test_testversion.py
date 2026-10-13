@@ -5,7 +5,7 @@
 Checks: invite group from ?g=, nothing sent before consent, welcome → tester ID, events for opening/cooking steps,
 feedback with context, automatic error capture, queue empties; dashboard (demo data) renders every tab without errors.
 """
-import asyncio, json, os, re, sys, subprocess, time
+import asyncio, json, os, re, sys, subprocess, time, urllib.parse
 from playwright.async_api import async_playwright
 DIST = os.path.abspath(sys.argv[1]); SHOTS = os.path.join(DIST, '..', 'shots-tv'); os.makedirs(SHOTS, exist_ok=True)
 fails = []
@@ -153,6 +153,27 @@ async def main():
             await pg.screenshot(path=os.path.join(SHOTS, f'{theme}-dash-uitnodigen.png'), full_page=True)
             ok(f'[{theme}] dashboard: geen JS-fouten', not errs, errs[:3])
             await ctx.close()
+        # ---------- dashboard met echte koppeling, terwijl de browser cross-origin fetch blokkeert ----------
+        ctx = await b.new_context(viewport={'width': 390, 'height': 844}); pg = await ctx.new_page(); errs = []
+        pg.on('pageerror', lambda e: errs.append(str(e)))
+        await ctx.route('https://fonts.googleapis.com/**', lambda r: r.abort())
+        DATA = {'generated': '2026-10-13T12:00:00Z', 'testers': [{'id': 'WES-AAAA', 'name': 'Wes', 'group': 'test', 'first': '2026-10-13T10:00:00Z', 'last': '2026-10-13T11:00:00Z', 'dayList': '2026-10-13'}],
+                'events': [], 'sessies': [], 'feedback': [{'fid': 'f1', 'at': '2026-10-13T11:00:00Z', 'tid': 'WES-AAAA', 'name': 'Wes', 'type': 'Werkt niet', 'message': 'test', 'screen': 's', 'rid': '', 'status': 'nieuw', 'prio': ''}], 'fouten': []}
+        calls = []
+        async def gas(route):
+            u = route.request.url; calls.append(u)
+            m = re.search(r'[?&]callback=([A-Za-z0-9_$]+)', u)
+            if m: await route.fulfill(status=200, body=m.group(1) + '(' + json.dumps({'ok': True} if 'action=' in u else DATA) + ');', headers={'Content-Type': 'application/javascript'})
+            else: await route.abort()   # zoals een adblocker of privacy-extensie: "Failed to fetch"
+        await ctx.route('https://script.google.com/**', gas)
+        await pg.goto(BASE + '/dashboard.html#k=KEY&u=' + urllib.parse.quote('https://script.google.com/macros/s/TEST/exec', safe='')); await pg.wait_for_timeout(3000)
+        jsonp = lambda q: pg.evaluate(f"performance.getEntriesByType('resource').some(e => e.name.includes('callback=') && e.name.includes({json.dumps(q)}))")
+        ok('dashboard: fetch geblokkeerd → toch geladen via reserve-methode (JSONP)', await pg.locator('.kpi').count() == 4 and 'Open P1\n1' in await pg.inner_text('.kpis') and await jsonp('key=KEY'))
+        await pg.click('[data-tab="feedback"]'); await pg.wait_for_timeout(200)
+        await pg.locator('.item').first.locator('[data-p="P2"]').click(); await pg.wait_for_timeout(500)
+        ok('dashboard: ook opslaan gaat via de reserve-methode', await jsonp('action=mark'))
+        ok('dashboard (echte koppeling): geen JS-fouten', not errs, errs[:2])
+        await ctx.close()
         await b.close()
     srv.terminate()
     print(f'\n{"ALLES OK" if not fails else str(len(fails)) + " FOUT"}')
