@@ -303,6 +303,18 @@ async function api(q = ''){
   if (!preferJsonp) { try { return await fetch(full, { cache:'no-store' }).then(r => r.json()); } catch(e) { preferJsonp = true; } }
   return jsonp(full);
 }
+/* Acties (bewaren, status, verwijderen…): alleen gelukt als het script {ok:true} terugstuurt.
+   Een verouderd script kent de actie niet en stuurt gewoon alle data terug: dat is NIET gelukt. */
+const NEED_API = 3;
+const oldScript = () => !DEMO && data && !(Number(data.api) >= NEED_API);
+async function act(q){
+  const j = await api(q);
+  if (j && j.ok) return j;
+  if (j && j.error && !/^Onbekende actie/.test(j.error)) throw new Error(j.error);
+  if (data) data.api = 0;                                   // laat de waarschuwing bovenaan zien
+  throw new Error('script verouderd, zie bovenaan');
+}
+const failed = e => { toast('Niet opgeslagen: ' + (e.message || 'probeer het opnieuw')); setTimeout(load, 300); };   // scherm terug naar wat er echt in de Sheet staat
 async function load(){
   if (loading) return; loading = true; $('reload').classList.add('spin');
   try {
@@ -391,7 +403,8 @@ function render(){
   renderTabs(openBugs);
   $('upd').innerHTML = DEMO ? 'voorbeelddata' : 'bijgewerkt<br>' + fmtTime(data.generated);
   const m = $('main');
-  const banner = DEMO ? '<p class="demo-banner">Je kijkt naar <b>voorbeelddata</b>. Open het dashboard via de link in je Sheet (tabblad Instellingen) voor je echte testers.</p>' : '';
+  const stale = oldScript() ? '<p class="demo-banner" style="background:var(--danger-soft)"><b>Opslaan werkt nog niet:</b> je Sheet draait een oude versie van het script. Bewaren (★), status, prioriteit en verwijderen worden dan niet opgeslagen. Oplossen: Sheet → Extensies → Apps Script → plak de nieuwste Code.gs → opslaan → voer <b>setup</b> uit → Implementeren → Implementaties beheren → potlood → Versie: <b>Nieuwe versie</b> → Implementeren. Daarna dit dashboard vernieuwen.</p>' : '';
+  const banner = stale + (DEMO ? '<p class="demo-banner">Je kijkt naar <b>voorbeelddata</b>. Open het dashboard via de link in je Sheet (tabblad Instellingen) voor je echte testers.</p>' : '');
   m.innerHTML = banner + ({ overzicht, testers: testersPane, recepten, feedback: feedbackPane, uitnodigen }[tab] || overzicht)(d);
   document.body.classList.toggle('selecting', tab === 'testers' && !!view.sel && view.sel.size > 0);
   bind(d);
@@ -628,7 +641,7 @@ function bind(d){
     const y = scrollY; render(); scrollTo(0, y); toast(msg);
     if (DEMO) return;
     const q = Object.entries(patch).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join('');
-    try { const j = await api(`&action=mark&tab=${encodeURIComponent(tb)}&id=${encodeURIComponent(id)}${q}`); if (j.error) toast('Niet opgeslagen: ' + j.error); } catch(e) { toast('Niet opgeslagen, probeer het opnieuw'); }
+    try { const j = await act(`&action=mark&tab=${encodeURIComponent(tb)}&id=${encodeURIComponent(id)}${q}`); if (j.kept) { const kc = (data.bewaard || []).find(x => String(x.src) === id); if (kc) kc.bid = j.kept; } } catch(e) { failed(e); }
   };
   m.querySelectorAll('[data-keep]').forEach(b => b.onclick = async () => {
     const [tb, id] = b.dataset.keep.split('|'); data.bewaard = data.bewaard || [];
@@ -637,14 +650,15 @@ function bind(d){
     if (on) data.bewaard = data.bewaard.filter(x => x !== it.kept); else data.bewaard.push(keptCopy(it, tb));
     const y = scrollY; render(); scrollTo(0, y); toast(on ? 'Niet meer bewaard' : '★ Bewaard: blijft ook als je de tester verwijdert');
     if (DEMO) return;
-    try { const j = await api(on ? `&action=unkeep&id=${encodeURIComponent(it.orphan ? it.kept.bid : id)}` : `&action=keep&tab=${encodeURIComponent(tb)}&id=${encodeURIComponent(id)}`);
-      if (j.error) toast('Niet opgeslagen: ' + j.error); else if (j.bid) { const kc = data.bewaard.find(x => String(x.src) === id); if (kc) kc.bid = j.bid; } }
-    catch(e) { toast('Niet opgeslagen, probeer het opnieuw'); }
+    try { const j = await act(on ? `&action=unkeep&id=${encodeURIComponent(it.orphan ? it.kept.bid : id)}` : `&action=keep&tab=${encodeURIComponent(tb)}&id=${encodeURIComponent(id)}`);
+      if (j.bid) { const kc = data.bewaard.find(x => String(x.src) === id); if (kc) kc.bid = j.bid; } }
+    catch(e) { failed(e); }
   });
   m.querySelectorAll('[data-note]').forEach(inp => inp.onchange = async () => {
     const kc = (data.bewaard || []).find(x => x.bid === inp.dataset.note); if (kc) kc.note = inp.value.trim(); toast('Notitie bewaard');
     if (DEMO) return;
-    try { const j = await api(`&action=mark&tab=Bewaard&id=${encodeURIComponent(inp.dataset.note)}&note=${encodeURIComponent(inp.value.trim())}`); if (j.error) toast('Niet opgeslagen: ' + j.error); } catch(e) { toast('Niet opgeslagen, probeer het opnieuw'); }
+    const nid = kc && /^tmp/.test(kc.bid) ? kc.src : inp.dataset.note;   // ster net gezet: de echte ID is er nog niet, de server vindt hem ook via de bron
+    try { await act(`&action=mark&tab=Bewaard&id=${encodeURIComponent(nid)}&note=${encodeURIComponent(inp.value.trim())}`); } catch(e) { failed(e); }
   });
   m.querySelectorAll('[data-setprio]').forEach(b => b.onclick = () => { const [tb, id, pr] = b.dataset.setprio.split('|'); save(tb + '|' + id, { prio: pr }, 'Prioriteit ' + pr); });
   m.querySelectorAll('[data-setstatus]').forEach(sel => sel.onchange = () => save(sel.dataset.setstatus, { status: sel.value }, 'Status: ' + sel.options[sel.selectedIndex].text));
@@ -701,9 +715,8 @@ async function doDelete(param, ids, scope, nTesters, wipeKept){
   view.sel = null; view.tester = null; render();
   let batch = null;
   if (!DEMO) {
-    try { const j = await api(`&action=delete&scope=${scope}&ids=${encodeURIComponent(param)}${wipeKept ? '&wipeKept=1' : ''}`);
-      if (j.error) { data = snapshot; render(); toast('Niet verwijderd: ' + j.error); return; } batch = j.batch; }
-    catch(e) { data = snapshot; render(); toast('Niet verwijderd, probeer het opnieuw'); return; }
+    try { const j = await act(`&action=delete&scope=${scope}&ids=${encodeURIComponent(param)}${wipeKept ? '&wipeKept=1' : ''}`); batch = j.batch; }
+    catch(e) { const api0 = data.api; data = snapshot; if (api0 === 0) data.api = 0; render(); toast('Niet verwijderd: ' + e.message); return; }
   }
   const t = $('toast'); clearTimeout(toast.t);
   t.innerHTML = `${scope === 'all' ? nTesters + (nTesters === 1 ? ' tester' : ' testers') + ' verwijderd' : 'Testdata verwijderd'}<button class="undo" type="button" id="undo">Ongedaan maken</button>`; t.hidden = false;
@@ -711,7 +724,7 @@ async function doDelete(param, ids, scope, nTesters, wipeKept){
   $('undo').onclick = async () => {
     t.hidden = true; data = snapshot; render();
     if (DEMO) { toast('Teruggezet'); return; }
-    try { const j = await api(`&action=undo&batch=${encodeURIComponent(batch)}`); toast(j.error ? 'Terugzetten mislukt: ' + j.error : 'Teruggezet'); load(); }
+    try { await act(`&action=undo&batch=${encodeURIComponent(batch)}`); toast('Teruggezet'); load(); }
     catch(e) { toast('Terugzetten mislukt, kijk in de Prullenbak van je Sheet'); }
   };
   if (!DEMO) setTimeout(load, 1500);

@@ -181,4 +181,14 @@ const r3 = get({ key: K, action: 'delete', ids: '*', scope: 'all' });
 assert(r3.ok && r3.testers >= 2 && sheets.Testers.rows.length === 1 && sheets.Events.rows.length === 1 && sheets.Feedback.rows.length === 1, 'alles verwijderen: alle tabbladen leeg (kop blijft)');
 assert(get({ action: 'status', id: T.id }).status === 'deleted', 'alles verwijderen: iedereen gemarkeerd');
 assert(get({ key: K, action: 'undo', batch: r3.batch }).ok && sheets.Events.rows.length === evBefore && sheets.Testers.rows.length === 3, 'alles ongedaan maken: alles terug');
+
+// ---------- opslaan betrouwbaar (13 okt) ----------
+assert(get({ key: K }).api >= 3, 'dashboard-data noemt de API-versie (dashboard waarschuwt bij een oud script)');
+assert(/Onbekende actie/.test(get({ key: K, action: 'bestaatniet' }).error || ''), 'onbekende actie geeft een fout, geen data');
+const ids = [...Array(400)].map(() => ctx.shortId_());
+assert(ids.every(x => /^[a-z][a-z0-9]{7}$/.test(x) && isNaN(Number(x))), 'ID\'s beginnen met een letter: Sheets maakt er nooit een getal van');
+post({ tester: T, items: [{ kind: 'feedback', at: now(), type: 'Idee', message: 'notitie via bron' }] });
+const srcId = sheets.Feedback.rows.slice(1).find(r => r[5] === 'notitie via bron')[0];
+get({ key: K, action: 'keep', tab: 'Feedback', id: srcId });
+assert(get({ key: K, action: 'mark', tab: 'Bewaard', id: srcId, note: 'via bron' }).ok && sheets.Bewaard.rows.some(r => r[1] === srcId && r[13] === 'via bron'), 'notitie lukt ook met de bron-ID (ster net gezet)');
 console.log(fails ? fails + ' FOUT' : 'ALLES OK'); process.exit(fails ? 1 : 0);

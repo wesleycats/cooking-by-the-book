@@ -19,6 +19,8 @@
  */
 
 const TZ = 'Europe/Amsterdam';
+// versie van de dashboard-API: het dashboard waarschuwt als het script ouder is dan het verwacht (nieuwe versie niet geïmplementeerd)
+const API_VERSION = 3;
 const NOTIFY = { errors: true, feedback: true, newTester: true };
 // ntfy.sh (gratis) telt per IP: 250 berichten/dag, 60 achter elkaar. Apps Script deelt IP's met andere scripts, dus
 // alles wordt gebundeld: urgent (fout, "Werkt niet") en overig elk in een eigen bundel, die pas vertrekt als de oudste
@@ -288,7 +290,8 @@ function doGet(e) {
   if (p.action === 'unkeep') return json_(unkeep_(ss, String(p.id || '')));
   if (p.action === 'delete') return json_(deleteTesters_(ss, String(p.ids || ''), p.scope === 'all' ? 'all' : 'data', p.wipeKept === '1'));
   if (p.action === 'undo') return json_(undoDelete_(ss, String(p.batch || '')));
-  const out = { generated: new Date().toISOString() };
+  if (p.action) return json_({ error: 'Onbekende actie: ' + p.action, api: API_VERSION });
+  const out = { generated: new Date().toISOString(), api: API_VERSION };
   for (const [name, cols] of Object.entries(TABS)) out[name.toLowerCase()] = rows_(ss, name, cols, name === 'Events' ? 8000 : 2000);
   return json_(out);
 }
@@ -306,7 +309,7 @@ function mark_(ss, p) {
   if (p.status != null && !STATUSES.includes(p.status)) return { error: 'Onbekende status' };
   if (p.prio != null && !PRIOS.includes(p.prio)) return { error: 'Onbekende prioriteit' };
   const tab = ['Fouten', 'Bewaard'].includes(p.tab) ? p.tab : 'Feedback', sh = ss.getSheetByName(tab), id = String(p.id || '');
-  const r = findRow_(sh, id); if (!r) return { error: 'Niet gevonden' };
+  const r = findRow_(sh, id) || (tab === 'Bewaard' ? findKept_(ss, id) : 0); if (!r) return { error: 'Niet gevonden' };
   const cols = TABS[tab].map(c => c[0]), set = (k, v) => sh.getRange(r, cols.indexOf(k) + 1).setValue(v);
   if (p.status != null) set('status', p.status);
   if (p.prio != null) set('prio', p.prio);
@@ -445,7 +448,7 @@ function top_(sh, rows, name) {
   for (const k of TIME_COLS[name] || []) { const i = TABS[name].findIndex(c => c[0] === k); if (i >= 0) sh.getRange(2, i + 1, rows.length, 1).setNumberFormat(TIME_FMT); }
 }
 function parseDate_(s) { const d = new Date(s); return isNaN(d) ? new Date() : d; }
-function shortId_() { return Utilities.getUuid().slice(0, 8); }
+function shortId_() { return 'abcdfghkmnpqrstvwxyz'[Math.floor(Math.random() * 20)] + randomId(7); }   // geen hex: Sheets maakt van bv. '1234e567' of '0123…' een getal en dan klopt de ID niet meer
 function text_(s) { return ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.TEXT); }
 let CALLBACK = '';
 function json_(o) {

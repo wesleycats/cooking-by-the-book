@@ -174,7 +174,7 @@ async def main():
         ctx = await b.new_context(viewport={'width': 390, 'height': 844}); pg = await ctx.new_page(); errs = []
         pg.on('pageerror', lambda e: errs.append(str(e)))
         await ctx.route('https://fonts.googleapis.com/**', lambda r: r.abort())
-        DATA = {'generated': '2026-10-13T12:00:00Z', 'testers': [{'id': 'WES-AAAA', 'name': 'Wes', 'group': 'test', 'first': '2026-10-13T10:00:00Z', 'last': '2026-10-13T11:00:00Z', 'dayList': '2026-10-13'}],
+        DATA = {'generated': '2026-10-13T12:00:00Z', 'api': 3, 'testers': [{'id': 'WES-AAAA', 'name': 'Wes', 'group': 'test', 'first': '2026-10-13T10:00:00Z', 'last': '2026-10-13T11:00:00Z', 'dayList': '2026-10-13'}],
                 'events': [], 'sessies': [], 'feedback': [{'fid': 'f1', 'at': '2026-10-13T11:00:00Z', 'tid': 'WES-AAAA', 'name': 'Wes', 'type': 'Werkt niet', 'message': 'test', 'screen': 's', 'rid': '', 'status': 'nieuw', 'prio': ''}], 'fouten': []}
         calls = []
         async def gas(route):
@@ -191,6 +191,42 @@ async def main():
         ok('dashboard: ook opslaan gaat via de reserve-methode', await jsonp('action=mark'))
         ok('dashboard (echte koppeling): geen JS-fouten', not errs, errs[:2])
         await ctx.close()
+        # ---------- verouderd script (nieuwe versie niet geïmplementeerd): kent bewaren/verwijderen niet en stuurt gewoon data terug ----------
+        for stale in (True, False):
+            ctx = await b.new_context(viewport={'width': 390, 'height': 844}); pg = await ctx.new_page(); errs = []; store = {'kept': False, 'deleted': False}
+            pg.on('pageerror', lambda e: errs.append(str(e)))
+            await ctx.route('https://fonts.googleapis.com/**', lambda r: r.abort())
+            def mk(stale, store):
+              async def gas2(route):
+                  u = route.request.url; d = json.loads(json.dumps(DATA))
+                  if stale: d.pop('api')
+                  if not stale and 'action=keep' in u: store['kept'] = True; body = {'ok': True, 'bid': 'b1'}
+                  elif not stale and 'action=delete' in u: store['deleted'] = True; body = {'ok': True, 'batch': 'x1'}
+                  elif not stale and 'action=' in u: body = {'ok': True}
+                  else:
+                      if store['kept']: d['bewaard'] = [{'bid': 'b1', 'src': 'f1', 'srcTab': 'Feedback', 'savedAt': d['generated'], 'at': d['generated'], 'name': 'Wes', 'type': 'Werkt niet', 'message': 'test', 'status': 'nieuw', 'prio': '', 'note': ''}]
+                      if store['deleted']: d['testers'] = []; d['feedback'] = []
+                      body = d
+                  await route.fulfill(status=200, body=json.dumps(body), headers={'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'})
+              return gas2
+            await ctx.route('https://script.google.com/**', mk(stale, store))
+            await pg.goto(BASE + '/dashboard.html#k=KEY&u=' + urllib.parse.quote('https://script.google.com/macros/s/TEST/exec', safe='')); await pg.wait_for_timeout(1500)
+            warn = lambda: pg.locator('text=Opslaan werkt nog niet').count()
+            tag = 'oud script' if stale else 'nieuw script'
+            ok(f'dashboard ({tag}): waarschuwing bovenaan ' + ('zichtbaar' if stale else 'afwezig'), (await warn() > 0) == stale)
+            await pg.click('[data-tab="feedback"]'); await pg.wait_for_timeout(200)
+            await pg.locator('.item').first.locator('.star').click(); await pg.wait_for_timeout(300)
+            t = await pg.inner_text('#toast')
+            ok(f'dashboard ({tag}): ster → ' + ('"Niet opgeslagen"' if stale else 'bewaard'), ('Niet opgeslagen' in t) == stale, t)
+            await pg.wait_for_timeout(1200)
+            starred = await pg.locator('.item').first.locator('.star[aria-pressed="true"]').count()
+            ok(f'dashboard ({tag}): na verversen staat de ster ' + ('weer uit' if stale else 'nog aan'), (starred == 1) != stale)
+            await pg.click('[data-tab="testers"]'); await pg.wait_for_timeout(200)
+            await pg.click('[data-tester="WES-AAAA"]'); await pg.click('#t-del'); await pg.fill('#del-confirm', 'VERWIJDER'); await pg.click('#del-yes'); await pg.wait_for_timeout(2200)
+            left = await pg.locator('[data-tester]').count()
+            ok(f'dashboard ({tag}): verwijderen ' + ('mislukt zichtbaar, tester blijft' if stale else 'gelukt, tester weg'), (left == 1) == stale, left)
+            ok(f'dashboard ({tag}): geen JS-fouten', not errs, errs[:2])
+            await ctx.close()
         await b.close()
     srv.terminate()
     print(f'\n{"ALLES OK" if not fails else str(len(fails)) + " FOUT"}')
