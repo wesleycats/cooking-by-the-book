@@ -49,7 +49,9 @@ h1,h2,h3{font-family:var(--f-display);line-height:1.15;margin:0;text-wrap:balanc
 .tab[aria-selected="true"]{background:var(--fg);color:var(--bg)}
 .tab .n{font:500 .72rem var(--f-mono);background:var(--danger);color:#fff;border-radius:999px;padding:1px 6px}
 
-main{padding:16px 0 calc(96px + env(safe-area-inset-bottom))}
+/* ruimte onderin voor de navigatiebalk (main.wrap: anders wint .wrap{padding:0 16px} en schuift de balk over de laatste kaarten) */
+main.wrap{padding:16px 16px calc(104px + env(safe-area-inset-bottom))}
+body.selecting main.wrap{padding-bottom:calc(172px + env(safe-area-inset-bottom))}
 /* navigatie onderin (duimbereik, zoals een app) */
 .bnav{position:fixed;left:0;right:0;bottom:0;z-index:20;display:grid;grid-template-columns:repeat(5,1fr);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
 .bnav button{border:0;background:none;display:grid;justify-items:center;gap:2px;padding:6px 0;font-size:.7rem;font-weight:600;color:var(--muted);cursor:pointer;position:relative;-webkit-tap-highlight-color:transparent}
@@ -380,6 +382,7 @@ function render(){
   const m = $('main');
   const banner = DEMO ? '<p class="demo-banner">Je kijkt naar <b>voorbeelddata</b>. Open het dashboard via de link in je Sheet (tabblad Instellingen) voor je echte testers.</p>' : '';
   m.innerHTML = banner + ({ overzicht, testers: testersPane, recepten, feedback: feedbackPane, uitnodigen }[tab] || overzicht)(d);
+  document.body.classList.toggle('selecting', tab === 'testers' && !!view.sel && view.sel.size > 0);
   bind(d);
 }
 
