@@ -19,7 +19,9 @@
  */
 
 const TZ = 'Europe/Amsterdam';
-const NOTIFY = { errors: true, brokenFeedback: true, newTester: true, maxPerHour: 12 };
+const NOTIFY = { errors: true, feedback: true, newTester: true, maxPerHour: 20 };
+// prioriteit per feedbacksoort (ntfy: 5 = urgent, 4 = hoog, 3 = normaal met geluid, 2 = stil)
+const FB_PRIO = { 'Werkt niet': [4, 'bug', '🐞'], 'Snap ik niet': [3, 'question', '❓'], 'Idee': [3, 'bulb', '💡'], 'Mooi': [2, 'heart', '♥'] };
 
 // tab → [kolomsleutel, kolomkop]; de sleutels gebruikt het dashboard
 const TABS = {
@@ -82,7 +84,8 @@ function doPost(e) {
       if (it.kind === 'sessie') { upsertSession_(ss, t.id, name, it); continue; }
       if (it.kind === 'feedback') {
         feedback.push([shortId_(), at, t.id, name, String(it.type || ''), String(it.message || '').slice(0, 2000), screen, rid, String(it.context || '').slice(0, 1500), 'nieuw']);
-        if (it.type === 'Werkt niet' && NOTIFY.brokenFeedback) alerts.push(['🐞 ' + name + ': werkt niet', String(it.message || '').slice(0, 300) + '\n' + screen, 4, ['bug']]);
+        if (NOTIFY.feedback) { const [pr, tag, ic] = FB_PRIO[it.type] || [3, 'speech_balloon', '💬'];
+          alerts.push([ic + ' ' + name + ': ' + String(it.type || 'feedback').toLowerCase(), String(it.message || '').slice(0, 300) + '\n' + screen, pr, [tag]]); }
         continue;
       }
       if (it.kind === 'fout') {
@@ -95,7 +98,7 @@ function doPost(e) {
       events.push([at, t.id, name, String(it.kind || '').slice(0, 30), rid, step, screen, Object.keys(details).length ? JSON.stringify(details).slice(0, 1000) : '']);
     }
     append_(ss, 'Events', events); append_(ss, 'Feedback', feedback); append_(ss, 'Fouten', errors);
-    if (isNew && NOTIFY.newTester) alerts.push(['👋 Nieuwe tester: ' + name, (group ? 'Groep: ' + group + ' · ' : '') + 'ID ' + t.id, 2, ['wave']]);
+    if (isNew && NOTIFY.newTester) alerts.push(['👋 Nieuwe tester: ' + name, (group ? 'Groep: ' + group + ' · ' : '') + 'ID ' + t.id, 3, ['wave']]);
     alerts.forEach(a => notify_(a[0], a[1], a[2], a[3]));
   } finally { lock.releaseLock(); }
   return text_('ok');
@@ -126,14 +129,29 @@ function upsertSession_(ss, tid, name, it) {
 
 /* ---------- meldingen (ntfy) ---------- */
 function notify_(title, message, priority, tags) {
-  const props = PropertiesService.getScriptProperties(), topic = props.getProperty('NTFY_TOPIC'); if (!topic) return;
+  const props = PropertiesService.getScriptProperties(), topic = props.getProperty('NTFY_TOPIC');
+  if (!topic) { console.warn('Geen NTFY_TOPIC: voer setup uit'); return 0; }
   const cache = CacheService.getScriptCache(), n = Number(cache.get('notify-count') || 0);
-  if (n >= NOTIFY.maxPerHour) return;            // nooit een stortvloed op je telefoon
+  if (n >= NOTIFY.maxPerHour) { console.warn('Meldingslimiet bereikt'); return 0; }   // nooit een stortvloed op je telefoon
   cache.put('notify-count', String(n + 1), 3600);
   const msg = { topic, title, message, priority, tags };
   const url = dashboardUrl_(); if (url) msg.click = url + '&tab=feed';
-  UrlFetchApp.fetch('https://ntfy.sh/', { method: 'post', contentType: 'application/json', payload: JSON.stringify(msg), muteHttpExceptions: true });
+  try {
+    const r = UrlFetchApp.fetch('https://ntfy.sh/', { method: 'post', contentType: 'application/json', payload: JSON.stringify(msg), muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) console.error('ntfy ' + r.getResponseCode() + ': ' + r.getContentText().slice(0, 300));
+    return r.getResponseCode();
+  } catch (err) { console.error('ntfy niet bereikbaar: ' + err); return -1; }
 }
+
+/** Handmatige test: kies `testMelding` → Uitvoeren. Het logboek onderin laat zien wat er gebeurt. */
+function testMelding() {
+  const topic = PropertiesService.getScriptProperties().getProperty('NTFY_TOPIC');
+  console.log('Kanaal: ' + topic + '  (moet exact gelijk zijn aan het abonnement in de ntfy-app)');
+  CacheService.getScriptCache().remove('notify-count');
+  const code = notify_('🔔 Proefkeuken test', 'Als je dit ziet, werken de meldingen.', 4, ['bell']);
+  console.log(code === 200 ? 'Verstuurd naar ntfy (200). Komt hij niet binnen? Dan klopt het kanaal in de app niet of slaapt de app.' : 'Mislukt, code: ' + code);
+}
+
 function dashboardUrl_() {
   const set = SpreadsheetApp.getActive().getSheetByName('Instellingen'); if (!set) return '';
   const v = String(set.getRange('B5').getValue() || ''); return v.startsWith('http') ? v : '';
