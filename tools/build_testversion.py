@@ -68,7 +68,7 @@ def main():
     open(os.path.join(a.out, 'testkit.js'), 'w', encoding='utf8').write(kit)
     json.dump({'recipes': [{k: r.get(k) for k in ('id', 'title', 'variant', 'minutes', 'steps')} for r in recipes]},
               open(os.path.join(a.out, 'recipes.json'), 'w', encoding='utf8'), ensure_ascii=False)
-    shutil.copy(os.path.join(ROOT, 'dashboard', 'dashboard.html'), os.path.join(a.out, 'dashboard.html'))
+    for f in ('dashboard.html', 'dashboard.webmanifest', 'dashboard-sw.js'): shutil.copy(os.path.join(ROOT, 'dashboard', f), os.path.join(a.out, f))
     shutil.copytree(os.path.join(ROOT, 'dashboard', 'vendor'), os.path.join(a.out, 'vendor'))
     shutil.copytree(os.path.join(ROOT, 'icon'), os.path.join(a.out, 'icons'), ignore=shutil.ignore_patterns('voorbeeld.png'))
     open(os.path.join(a.out, '.nojekyll'), 'w').close()       # GitHub Pages: serve files as they are

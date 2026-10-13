@@ -28,8 +28,8 @@ const TABS = {
   Testers:  [['id','ID'],['name','Naam'],['group','Groep'],['first','Eerste keer'],['last','Laatst actief'],['days','Actieve dagen'],['events','Events'],['device','Toestel'],['size','Scherm'],['version','Versie'],['dayList','Dagen']],
   Events:   [['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['kind','Soort'],['rid','Recept-ID'],['step','Stap'],['screen','Scherm'],['details','Details']],
   Sessies:  [['sid','Sessie-ID'],['tid','Tester-ID'],['name','Naam'],['rid','Recept-ID'],['title','Recept'],['date','Datum'],['servings','Porties'],['min','Kooktijd (min)'],['recipeMin','Recepttijd (min)'],['rating','Sterren'],['chips','Chips'],['note','Notitie'],['adj','Timeraanpassingen'],['updated','Bijgewerkt']],
-  Feedback: [['fid','ID'],['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['type','Soort'],['message','Bericht'],['screen','Scherm'],['rid','Recept-ID'],['context','Context'],['status','Status']],
-  Fouten:   [['eid','ID'],['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['message','Melding'],['source','Bron'],['screen','Scherm'],['rid','Recept-ID'],['version','Versie'],['device','Toestel'],['stack','Stack'],['status','Status']]
+  Feedback: [['fid','ID'],['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['type','Soort'],['message','Bericht'],['screen','Scherm'],['rid','Recept-ID'],['context','Context'],['status','Status'],['prio','Prioriteit']],
+  Fouten:   [['eid','ID'],['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['message','Melding'],['source','Bron'],['screen','Scherm'],['rid','Recept-ID'],['version','Versie'],['device','Toestel'],['stack','Stack'],['status','Status'],['prio','Prioriteit']]
 };
 
 /* ---------- eenmalig ---------- */
@@ -47,12 +47,13 @@ function setup() {
   if (!props.getProperty('NTFY_TOPIC')) props.setProperty('NTFY_TOPIC', 'cbtb-' + randomId(18));
   if (!props.getProperty('DASHBOARD_KEY')) props.setProperty('DASHBOARD_KEY', randomId(24));
   const set = ss.getSheetByName('Instellingen') || ss.insertSheet('Instellingen');
+  const keepUrl = String(set.getRange('B4').getValue() || '');   // web-app-URL bewaren bij opnieuw uitvoeren
   set.clear();
   set.getRange(1, 1, 6, 2).setValues([
     ['Meldingskanaal (ntfy)', props.getProperty('NTFY_TOPIC')],
     ['Abonneren', 'Installeer de app "ntfy" → + → vul het meldingskanaal hierboven in (server ntfy.sh)'],
     ['Dashboardsleutel', props.getProperty('DASHBOARD_KEY')],
-    ['Web-app-URL', '(plak hier de /exec-URL na Implementeren)'],
+    ['Web-app-URL', keepUrl.startsWith('http') ? keepUrl : '(plak hier de /exec-URL na Implementeren)'],
     ['Dashboard', '=IF(LEFT(B4,4)="http","https://wesleycats.github.io/cooking-by-the-book/dashboard.html#k="&B3&"&u="&ENCODEURL(B4),"vul eerst B4 in")'],
     ['Let op', 'Deel de sleutel en het kanaal niet: wie ze heeft, ziet de testgegevens of je meldingen.']
   ]);
@@ -83,13 +84,13 @@ function doPost(e) {
       const at = parseDate_(it.at), rid = String(it.rid || '').slice(0, 80), screen = String(it.screen || '').slice(0, 120);
       if (it.kind === 'sessie') { upsertSession_(ss, t.id, name, it); continue; }
       if (it.kind === 'feedback') {
-        feedback.push([shortId_(), at, t.id, name, String(it.type || ''), String(it.message || '').slice(0, 2000), screen, rid, String(it.context || '').slice(0, 1500), 'nieuw']);
+        feedback.push([shortId_(), at, t.id, name, String(it.type || ''), String(it.message || '').slice(0, 2000), screen, rid, String(it.context || '').slice(0, 1500), 'nieuw', '']);
         if (NOTIFY.feedback) { const [pr, tag, ic] = FB_PRIO[it.type] || [3, 'speech_balloon', '💬'];
           alerts.push([ic + ' ' + name + ': ' + String(it.type || 'feedback').toLowerCase(), String(it.message || '').slice(0, 300) + '\n' + screen, pr, [tag]]); }
         continue;
       }
       if (it.kind === 'fout') {
-        errors.push([shortId_(), at, t.id, name, String(it.message || '').slice(0, 300), String(it.source || '').slice(0, 200), screen, rid, String(body.version || ''), String(body.device || '').slice(0, 160), String(it.stack || '').slice(0, 900), 'nieuw']);
+        errors.push([shortId_(), at, t.id, name, String(it.message || '').slice(0, 300), String(it.source || '').slice(0, 200), screen, rid, String(body.version || ''), String(body.device || '').slice(0, 160), String(it.stack || '').slice(0, 900), 'nieuw', '']);
         if (NOTIFY.errors && firstTime_('err:' + t.id + ':' + it.message, 1800)) alerts.push(['⚠️ Fout bij ' + name, String(it.message || '').slice(0, 200) + '\n' + screen, 4, ['warning']]);
         continue;
       }
@@ -170,7 +171,10 @@ function doGet(e) {
     const tab = p.tab === 'Fouten' ? 'Fouten' : 'Feedback', sh = ss.getSheetByName(tab);
     const f = sh.getRange('A:A').createTextFinder(String(p.id || '')).matchEntireCell(true).findNext();
     if (!f || f.getRow() < 2) return json_({ error: 'Niet gevonden' });
-    sh.getRange(f.getRow(), TABS[tab].length).setValue(p.status === 'nieuw' ? 'nieuw' : 'opgelost');
+    const cols = TABS[tab].map(c => c[0]);
+    const STATUS = ['nieuw', 'gepland', 'opgelost', 'niet doen'], PRIO = ['P1', 'P2', 'P3', ''];
+    if (p.status != null) { if (!STATUS.includes(p.status)) return json_({ error: 'Onbekende status' }); sh.getRange(f.getRow(), cols.indexOf('status') + 1).setValue(p.status); }
+    if (p.prio != null) { if (!PRIO.includes(p.prio)) return json_({ error: 'Onbekende prioriteit' }); sh.getRange(f.getRow(), cols.indexOf('prio') + 1).setValue(p.prio); }
     return json_({ ok: true });
   }
   const out = { generated: new Date().toISOString() };

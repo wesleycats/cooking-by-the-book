@@ -1,0 +1,19 @@
+{
+  "name": "Proefkeuken · testoverzicht",
+  "short_name": "Proefkeuken",
+  "description": "Testers, feedback en beslislijst van de Proefkeuken van Cooking by the Book",
+  "id": "./dashboard.html",
+  "start_url": "./dashboard.html",
+  "scope": "./dashboard.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#121711",
+  "theme_color": "#2F6B3A",
+  "lang": "nl",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

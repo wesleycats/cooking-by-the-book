@@ -6,6 +6,12 @@
 <meta name="robots" content="noindex">
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<link rel="manifest" href="dashboard.webmanifest">
+<meta name="theme-color" content="#2F6B3A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Proefkeuken">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Proefkeuken · Cooking by the Book</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -43,7 +49,46 @@ h1,h2,h3{font-family:var(--f-display);line-height:1.15;margin:0;text-wrap:balanc
 .tab[aria-selected="true"]{background:var(--fg);color:var(--bg)}
 .tab .n{font:500 .72rem var(--f-mono);background:var(--danger);color:#fff;border-radius:999px;padding:1px 6px}
 
-main{padding:16px 0 40px}
+main{padding:16px 0 calc(96px + env(safe-area-inset-bottom))}
+/* navigatie onderin (duimbereik, zoals een app) */
+.bnav{position:fixed;left:0;right:0;bottom:0;z-index:20;display:grid;grid-template-columns:repeat(5,1fr);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+.bnav button{border:0;background:none;display:grid;justify-items:center;gap:2px;padding:6px 0;font-size:.7rem;font-weight:600;color:var(--muted);cursor:pointer;position:relative;-webkit-tap-highlight-color:transparent}
+.bnav svg{width:23px;height:23px}
+.bnav button[aria-selected="true"]{color:var(--accent)}
+.bnav button[aria-selected="true"] .pill{background:var(--accent-soft)}
+.bnav .pill{display:grid;place-items:center;width:52px;height:30px;border-radius:999px;transition:background .15s}
+.bnav .n{position:absolute;top:2px;left:calc(50% + 8px);font:600 .66rem var(--f-mono);background:var(--danger);color:#fff;border-radius:999px;padding:1px 5px;min-width:17px;text-align:center}
+@media (min-width:760px){.bnav{left:50%;transform:translateX(-50%);bottom:14px;width:520px;border:1px solid var(--line);border-radius:22px;padding:6px 4px}}
+/* prioriteit en status */
+.prio{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.prio button{border:0;background:none;padding:4px 10px;font:600 .76rem var(--f-mono);color:var(--muted);cursor:pointer}
+.prio button+button{border-left:1px solid var(--line)}
+.prio button[aria-pressed="true"][data-p="P1"]{background:var(--danger);color:#fff}
+.prio button[aria-pressed="true"][data-p="P2"]{background:var(--pop);color:#1c2419}
+.prio button[aria-pressed="true"][data-p="P3"]{background:var(--accent-soft);color:var(--accent)}
+.prio.auto button[aria-pressed="true"]{opacity:.75}
+.st{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 26px 4px 10px;font-size:.8rem;font-weight:600;appearance:none;background:var(--surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%235d6b57" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>') no-repeat right 7px center/12px}
+.ia{flex-wrap:wrap;align-items:center}
+.ia .hint{font-size:.72rem;color:var(--muted)}
+.dup{font:600 .72rem var(--f-mono);background:var(--sunk);color:var(--fg);border-radius:999px;padding:2px 8px}
+details.more summary{font-size:.8rem;color:var(--muted);cursor:pointer}
+details.more ul{margin:6px 0 0;padding-left:18px;font-size:.84rem}
+.item.p1{border-left:4px solid var(--danger)}
+.item.p2{border-left:4px solid var(--pop)}
+.item.dim{opacity:.55}
+.decide{list-style:none;margin:0;padding:0;display:grid;gap:8px;counter-reset:d}
+.decide li{display:grid;grid-template-columns:30px 1fr;gap:10px;align-items:start;background:var(--sunk);border-radius:12px;padding:10px 12px;cursor:pointer}
+.decide li::before{counter-increment:d;content:counter(d);width:28px;height:28px;border-radius:999px;display:grid;place-items:center;font:800 .9rem var(--f-display);background:var(--fg);color:var(--bg)}
+.decide b{display:block;font-size:.92rem;line-height:1.35;overflow-wrap:anywhere}
+.decide small{display:flex;gap:6px;flex-wrap:wrap;align-items:center;color:var(--muted);font-size:.76rem;margin-top:4px}
+.pchip{font:700 .7rem var(--f-mono);border-radius:6px;padding:1px 6px}
+.pchip.P1{background:var(--danger);color:#fff}.pchip.P2{background:var(--pop);color:#1c2419}.pchip.P3{background:var(--accent-soft);color:var(--accent)}
+.seg{display:inline-flex;background:var(--sunk);border-radius:999px;padding:3px}
+.seg button{border:0;background:none;border-radius:999px;padding:5px 12px;font-size:.8rem;font-weight:600;color:var(--muted);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgb(0 0 0/.12)}
+.install{display:flex;gap:12px;align-items:center}
+.install img{width:44px;height:44px;border-radius:11px;flex:none}
+.install p{margin:0;font-size:.86rem;flex:1}
 section.pane{display:grid;gap:16px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
 .card h2{font-size:1.05rem;margin-bottom:10px}
@@ -162,7 +207,7 @@ details.stack pre{font:500 .72rem/1.5 var(--f-mono);white-space:pre-wrap;overflo
 .field input{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:1rem;width:100%}
 .link{font:500 .82rem var(--f-mono);background:var(--sunk);border-radius:10px;padding:10px 12px;overflow-wrap:anywhere}
 .row{display:flex;gap:8px;flex-wrap:wrap}
-.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:.88rem;font-weight:600;z-index:40;max-width:92vw}
+.toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:.88rem;font-weight:600;z-index:40;max-width:92vw}
 .demo-banner{background:var(--pop-soft);color:var(--fg);border-radius:10px;padding:8px 12px;font-size:.84rem}
 table.tbl{width:100%;border-collapse:collapse;font-size:.84rem}
 table.tbl th{text-align:left;font-weight:600;color:var(--muted);border-bottom:1px solid var(--line);padding:4px 6px}
@@ -179,9 +224,9 @@ table.tbl td.n{text-align:right;font-family:var(--f-mono)}
       <div class="upd" id="upd"></div>
       <button class="iconbtn" id="reload" type="button" aria-label="Vernieuwen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
     </div>
-    <nav class="tabs" role="tablist" id="tabs"></nav>
   </div>
 </header>
+<nav class="bnav" role="tablist" id="tabs" aria-label="Onderdelen"></nav>
 <main class="wrap" id="main"><p class="empty">Laden…</p></main>
 <div class="toast" id="toast" hidden></div>
 <script src="vendor/qrcode.js"></script>
@@ -245,18 +290,45 @@ function derive(){
     ...fb.map(f => ({ ...f, tab: 'Feedback', id: f.fid, bug: f.type === 'Werkt niet' })),
     ...er.map(f => ({ ...f, tab: 'Fouten', id: f.eid, type: 'Fout', bug: true }))
   ].sort((a, b) => b.at.localeCompare(a.at));
-  return { ev, ss, testers: Object.values(byT).sort((a, b) => String(b.last).localeCompare(String(a.last))), items, byT };
+  return { ev, ss, testers: Object.values(byT).sort((a, b) => String(b.last).localeCompare(String(a.last))), items, byT, groups: groups(items) };
+}
+
+/* ---------- prioriteren ----------
+   Voorstel-prioriteit per soort (P1 blokkeert, P2 hindert, P3 later); Wes past het met één tik aan.
+   Gelijksoortige meldingen (zelfde soort, scherm en recept) vormen één groep: hoe meer testers, hoe hoger. */
+const AUTO_P = { 'Fout': 'P1', 'Werkt niet': 'P1', 'Snap ik niet': 'P2', 'Idee': 'P3', 'Mooi': 'P3' };
+const STATUS = [['nieuw', 'Nieuw'], ['gepland', 'Gepland'], ['opgelost', 'Opgelost'], ['niet doen', 'Niet doen']];
+const isOpen = i => !['opgelost', 'niet doen'].includes(i.status || 'nieuw');
+const prioOf = i => i.prio || AUTO_P[i.type] || 'P2';
+const groupKey = i => [i.type === 'Fout' ? 'F:' + String(i.message).slice(0, 60) : i.type, String(i.screen || '').replace(/\s*\(.*\)$/, ''), i.rid || ''].join('|');
+function groups(items){
+  const g = new Map();
+  for (const i of items.filter(isOpen)) { const k = groupKey(i); if (!g.has(k)) g.set(k, { key: k, items: [], testers: new Set() }); const x = g.get(k); x.items.push(i); x.testers.add(i.tid); }
+  for (const x of g.values()) {
+    x.lead = x.items[0];                                   // nieuwste (items zijn al op tijd gesorteerd)
+    x.prio = x.items.map(prioOf).sort()[0];                // hoogste prioriteit in de groep
+    const age = (Date.now() - Date.parse(x.lead.at)) / 864e5;
+    x.score = { P1: 100, P2: 50, P3: 15 }[x.prio] + 20 * (x.testers.size - 1) + 5 * (x.items.length - 1) + (x.items.some(i => i.status === 'gepland') ? 10 : 0) - Math.min(age, 14);
+  }
+  return [...g.values()].sort((a, b) => b.score - a.score);
 }
 
 /* ---------- opbouw ---------- */
-const TABS = [['overzicht', 'Overzicht'], ['testers', 'Testers'], ['recepten', 'Recepten'], ['feedback', 'Feedback'], ['uitnodigen', 'Uitnodigen']];
+const NAV_IC = {
+  overzicht: '<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 4v4h6V4z"/>',
+  feedback: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+  testers: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.6.8 2.6 2.6 3 5.2"/>',
+  recepten: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5M9 7h6"/>',
+  uitnodigen: '<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/>'
+};
+const TABS = [['overzicht', 'Overzicht'], ['feedback', 'Feedback'], ['testers', 'Testers'], ['recepten', 'Recepten'], ['uitnodigen', 'Uitnodigen']];
 function renderTabs(openBugs){
-  $('tabs').innerHTML = TABS.map(([k, l]) => `<button class="tab" role="tab" type="button" data-tab="${k}" aria-selected="${k === tab}">${l}${k === 'feedback' && openBugs ? `<span class="n" aria-label="${openBugs} open bugs">${openBugs}</span>` : ''}</button>`).join('');
+  $('tabs').innerHTML = TABS.map(([k, l]) => `<button role="tab" type="button" data-tab="${k}" aria-selected="${k === tab}"><span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NAV_IC[k]}</svg></span>${l}${k === 'feedback' && openBugs ? `<span class="n" aria-label="${openBugs} open P1">${openBugs}</span>` : ''}</button>`).join('');
   $('tabs').querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; view.tester = null; lsSet({ tab }); try { history.replaceState(null, '', '#tab=' + tab); } catch(e) {} render(); window.scrollTo(0, 0); });
 }
 function render(){
   const d = derive();
-  const openBugs = d.items.filter(i => i.bug && i.status !== 'opgelost').length;
+  const openBugs = d.groups.filter(g => g.prio === 'P1').length;
   renderTabs(openBugs);
   $('upd').innerHTML = DEMO ? 'voorbeelddata' : 'bijgewerkt<br>' + fmtTime(data.generated);
   const m = $('main');
@@ -270,7 +342,7 @@ function overzicht(d){
   const now = Date.now(), active7 = d.testers.filter(t => t.last && now - Date.parse(t.last) < 7 * DAY).length;
   const started = d.ev.filter(e => e.kind === 'kook_start').length, done = d.ss.length;
   const stars = d.ss.map(s => s.rating).filter(x => x !== '' && x != null).map(Number);
-  const openBugs = d.items.filter(i => i.bug && i.status !== 'opgelost').length;
+  const openBugs = d.groups.filter(g => g.prio === 'P1').length;
   const days = [...Array(14)].map((_, k) => dayKey(now - (13 - k) * DAY));
   const perDay = days.map(k => d.testers.filter(t => t.days.has(k)).length), max = Math.max(1, ...perDay);
   const attn = attention(d);
@@ -279,8 +351,10 @@ function overzicht(d){
       <div class="kpi"><span class="lbl">Testers</span><b>${d.testers.length}</b><span>${active7} actief deze week</span></div>
       <div class="kpi"><span class="lbl">Keer gekookt</span><b>${done}</b><span>${started} keer gestart</span></div>
       <div class="kpi"><span class="lbl">Gem. sterren</span><b>${nl1(avg(stars))}</b><span>${stars.length} beoordelingen</span></div>
-      <div class="kpi ${openBugs ? 'alert' : ''}"><span class="lbl">${openBugs ? '⚠ ' : ''}Open bugs</span><b>${openBugs}</b><span>${openBugs ? 'tik op Feedback' : 'niets open'}</span></div>
+      <div class="kpi ${openBugs ? 'alert' : ''}"><span class="lbl">${openBugs ? '⚠ ' : ''}Open P1</span><b>${openBugs}</b><span>${openBugs ? 'blokkeert testers' : 'niets dat blokkeert'}</span></div>
     </div>
+    ${installCard()}
+    <div class="card"><h2>Beslislijst</h2><p class="sub" style="margin:-4px 0 10px">Top 5 om nu aan te pakken: prioriteit × aantal testers × hoe recent</p>${decideList(d, 5)}</div>
     <div class="grid2">
       <div class="card"><h2>Actieve testers per dag</h2><p class="sub">Laatste 14 dagen · tik op een staaf</p>
         <div class="bars" id="bars">${perDay.map((v, k) => `<div class="b ${v ? '' : 'zero'}" data-tip="${esc(fmtDay(days[k]))}: ${v} ${v === 1 ? 'tester' : 'testers'}"><i style="height:${(v / max * 100).toFixed(1)}%"></i></div>`).join('')}</div>
@@ -288,13 +362,26 @@ function overzicht(d){
       </div>
       <div class="card"><h2>Let op</h2>${attn.length ? `<ul class="attn">${attn.join('')}</ul>` : '<p class="sub">Niets bijzonders. Alles loopt.</p>'}</div>
     </div>
-    <div class="card"><h2>Nieuwste meldingen</h2>${d.items.length ? `<div class="feed">${d.items.slice(0, 3).map(itemHtml).join('')}</div><p style="margin:10px 0 0"><button class="btn sm" type="button" data-go="feedback">Alle feedback</button></p>` : '<p class="sub">Nog geen feedback.</p>'}</div>
   </section>`;
+}
+function decideList(d, n){
+  const top = d.groups.slice(0, n);
+  if (!top.length) return '<p class="sub">Niets open. Mooi zo.</p>';
+  return `<ol class="decide">${top.map(g => { const r = recipes.find(x => x.id === g.lead.rid);
+    return `<li data-open="${esc(g.key)}"><div><b>${esc(String(g.lead.message).slice(0, 110))}</b><small><span class="pchip ${g.prio}">${g.prio}</span>${TYPE_IC[g.lead.type] || ''} ${esc(g.lead.type)}${g.items.length > 1 ? ` · <span class="dup">×${g.items.length} · ${g.testers.size} ${g.testers.size === 1 ? 'tester' : 'testers'}</span>` : ` · ${esc(g.lead.name)}`}${r ? ' · ' + esc(short(r.title)) : ''}${g.items.some(i => i.status === 'gepland') ? ' · gepland' : ''}</small></div></li>`; }).join('')}</ol>`;
+}
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; if (tab === 'overzicht' && data) render(); });
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+function installCard(){
+  if (standalone() || lsGet().noInstall) return '';
+  const ios = /iphone|ipad/i.test(navigator.userAgent);
+  return `<div class="card install"><img src="icons/icon-192.png" alt=""><p><b>Zet het dashboard op je beginscherm</b><br><span class="muted">${installEvt ? 'Opent dan als app, zonder adresbalk.' : ios ? 'Tik op Delen ↑ → Zet op beginscherm.' : 'Chrome-menu ⋮ → App installeren (of Toevoegen aan startscherm).'}</span></p>${installEvt ? '<button class="btn primary sm" type="button" id="do-install">Installeren</button>' : '<button class="btn sm" type="button" id="no-install">Oké</button>'}</div>`;
 }
 function attention(d){
   const out = [], now = Date.now();
   const li = (cls, ic, html) => `<li><span class="ic ${cls}" aria-hidden="true">${ic}</span><span>${html}</span></li>`;
-  const bugs = d.items.filter(i => i.bug && i.status !== 'opgelost');
+  const bugs = d.items.filter(i => i.bug && isOpen(i));
   if (bugs.length) out.push(li('bad', '!', `<b>${bugs.length} open ${bugs.length === 1 ? 'bug' : 'bugs'}</b>, nieuwste van ${esc(bugs[0].name)} (${ago(bugs[0].at)})`));
   for (const t of d.testers) { const s = t.last ? (now - Date.parse(t.last)) / DAY : 99; if (s >= 3) out.push(li('', '…', `<b>${esc(t.name)}</b> is ${Math.floor(s)} dagen niet geweest`)); }
   for (const r of recipes) {
@@ -383,33 +470,44 @@ function recepten(d){
 
 /* Feedback en fouten: één tijdlijn, filters, opgelost markeren, kopiëren voor Claude */
 const TYPE_IC = { 'Werkt niet': '🐞', 'Fout': '⚠', 'Snap ik niet': '?', 'Idee': '💡', 'Mooi': '♥' };
-function itemHtml(i){
-  const r = recipes.find(x => x.id === i.rid), done = i.status === 'opgelost';
-  return `<article class="item ${i.bug ? 'bug' : ''} ${done ? 'done' : ''}">
-    <div class="ih"><span class="chip ${i.bug ? 'bad' : i.type === 'Mooi' ? 'ok' : i.type === 'Snap ik niet' ? 'warn' : ''}">${TYPE_IC[i.type] || ''} ${esc(i.type)}</span><span class="who">${esc(i.name)}</span>${done ? '<span class="chip ok">✓ opgelost</span>' : ''}<span class="when" title="${esc(new Date(i.at).toLocaleString('nl-NL'))}">${ago(i.at)}</span></div>
+function itemHtml(i, g){
+  const r = recipes.find(x => x.id === i.rid), open = isOpen(i), p = prioOf(i), ref = esc(i.tab) + '|' + esc(i.id);
+  return `<article class="item ${open ? p.toLowerCase() : 'dim'}" id="it-${esc(i.id)}">
+    <div class="ih"><span class="chip ${i.bug ? 'bad' : i.type === 'Mooi' ? 'ok' : i.type === 'Snap ik niet' ? 'warn' : ''}">${TYPE_IC[i.type] || ''} ${esc(i.type)}</span><span class="who">${esc(i.name)}</span>${g && g.items.length > 1 ? `<span class="dup">×${g.items.length} · ${g.testers.size} ${g.testers.size === 1 ? 'tester' : 'testers'}</span>` : ''}<span class="when" title="${esc(new Date(i.at).toLocaleString('nl-NL'))}">${ago(i.at)}</span></div>
     <div class="msg">${esc(i.message)}</div>
     <div class="where">${esc(i.screen || '')}${r ? ' · ' + esc(short(r.title)) : ''}${i.source ? ' · ' + esc(i.source) : ''}</div>
+    ${g && g.items.length > 1 ? `<details class="more"><summary>Ook gemeld door ${esc([...new Set(g.items.slice(1).map(x => x.name))].join(', '))}</summary><ul>${g.items.slice(1).map(x => `<li>${esc(x.message)} <span class="muted">— ${esc(x.name)}, ${ago(x.at)}</span></li>`).join('')}</ul></details>` : ''}
     ${i.stack ? `<details class="stack"><summary>Technische details</summary><pre>${esc(i.stack)}\n\n${esc(i.device || '')} · ${esc(i.version || '')}</pre></details>` : ''}
-    <div class="ia"><button class="btn sm" type="button" data-mark="${esc(i.tab)}|${esc(i.id)}|${done ? 'nieuw' : 'opgelost'}">${done ? 'Heropen' : '✓ Opgelost'}</button></div>
+    <div class="ia"><span class="prio ${i.prio ? '' : 'auto'}" role="group" aria-label="Prioriteit">${['P1', 'P2', 'P3'].map(x => `<button type="button" data-p="${x}" data-setprio="${ref}|${x}" aria-pressed="${p === x}">${x}</button>`).join('')}</span>
+      <select class="st" data-setstatus="${ref}" aria-label="Status">${STATUS.map(([k, l]) => `<option value="${k}" ${(i.status || 'nieuw') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      ${i.prio ? '' : '<span class="hint">voorstel</span>'}</div>
   </article>`;
 }
-const FF = [['open', 'Open'], ['alles', 'Alles'], ['Werkt niet', '🐞 Werkt niet'], ['Fout', '⚠ Fouten'], ['Snap ik niet', '? Snap ik niet'], ['Idee', '💡 Idee'], ['Mooi', '♥ Mooi']];
+const FF = [['open', 'Open'], ['gepland', 'Gepland'], ['alles', 'Alles'], ['Werkt niet', '🐞 Werkt niet'], ['Fout', '⚠ Fouten'], ['Snap ik niet', '? Snap ik niet'], ['Idee', '💡 Idee'], ['Mooi', '♥ Mooi']];
+const matchF = (i, k) => k === 'alles' || (k === 'open' ? isOpen(i) : k === 'gepland' ? i.status === 'gepland' : i.type === k);
 function filtered(d){
-  return d.items.filter(i => (view.ff === 'alles' || (view.ff === 'open' ? i.status !== 'opgelost' : i.type === view.ff)) && (!view.ft || i.tid === view.ft));
+  return d.items.filter(i => matchF(i, view.ff) && (!view.ft || i.tid === view.ft));
 }
 function feedbackPane(d){
-  const list = filtered(d);
-  const count = k => d.items.filter(i => (k === 'alles' || (k === 'open' ? i.status !== 'opgelost' : i.type === k)) && (!view.ft || i.tid === view.ft)).length;
+  const list = filtered(d), byPrio = (view.sort || 'prio') === 'prio';
+  const count = k => d.items.filter(i => matchF(i, k) && (!view.ft || i.tid === view.ft)).length;
+  let body;
+  if (byPrio) {   // één kaart per groep, hoogste score eerst; gesloten meldingen onderaan
+    const gs = d.groups.filter(g => g.items.some(i => list.includes(i)));
+    const closed = list.filter(i => !isOpen(i));
+    body = gs.map(g => itemHtml(g.lead, g)).join('') + closed.map(i => itemHtml(i)).join('');
+  } else body = list.map(i => itemHtml(i)).join('');
   return `<section class="pane">
     <div class="filters">${FF.map(([k, l]) => `<button class="f" type="button" data-ff="${esc(k)}" aria-pressed="${view.ff === k}">${l}<small>${count(k)}</small></button>`).join('')}
       <select class="f" id="ft" aria-label="Tester"><option value="">Alle testers</option>${d.testers.map(t => `<option value="${esc(t.id)}" ${view.ft === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
-    <div class="row"><button class="btn primary sm" type="button" id="copy-claude" ${list.length ? '' : 'disabled'}>Kopieer ${list.length} voor Claude</button></div>
-    ${list.length ? `<div class="feed">${list.map(itemHtml).join('')}</div>` : '<div class="card empty">Niets in deze selectie.</div>'}
+    <div class="row" style="align-items:center;justify-content:space-between"><span class="seg" role="group" aria-label="Sorteren"><button type="button" data-sort="prio" aria-pressed="${byPrio}">Prioriteit</button><button type="button" data-sort="new" aria-pressed="${!byPrio}">Nieuwste</button></span>
+      <button class="btn primary sm" type="button" id="copy-claude" ${list.length ? '' : 'disabled'}>Kopieer ${list.length} voor Claude</button></div>
+    ${body ? `<div class="feed">${body}</div>` : '<div class="card empty">Niets in deze selectie.</div>'}
   </section>`;
 }
 function claudeText(list){
-  return ['Feedback uit de testversie van Cooking by the Book (' + list.length + ' meldingen). Verwerk dit: groepeer per probleem, zeg wat je voorstelt en wat eerst moet.', '',
-    ...list.map(i => { const r = recipes.find(x => x.id === i.rid); return `- [${i.type}] ${i.name} (${i.tid}), ${new Date(i.at).toLocaleString('nl-NL')}: ${i.message}\n  Waar: ${i.screen || '?'}${r ? ' · ' + r.title : ''}${i.source ? ' · ' + i.source : ''}${i.status === 'opgelost' ? ' · (al opgelost)' : ''}`; })].join('\n');
+  return ['Feedback uit de Proefkeuken van Cooking by the Book (' + list.length + ' meldingen). Verwerk dit: groepeer per probleem, toets mijn prioriteiten (P1 blokkeert, P2 hindert, P3 later), zeg wat je voorstelt en wat eerst moet.', '',
+    ...list.map(i => { const r = recipes.find(x => x.id === i.rid); return `- [${prioOf(i)}${i.prio ? '' : ' voorstel'} · ${i.status || 'nieuw'}] [${i.type}] ${i.name} (${i.tid}), ${new Date(i.at).toLocaleString('nl-NL')}: ${i.message}\n  Waar: ${i.screen || '?'}${r ? ' · ' + r.title : ''}${i.source ? ' · ' + i.source : ''}`; })].join('\n');
 }
 
 /* Uitnodigen: link + QR per groep */
@@ -448,14 +546,21 @@ function bind(d){
   m.querySelectorAll('[data-ff]').forEach(b => b.onclick = () => { view.ff = b.dataset.ff; render(); });
   if ($('ft')) $('ft').onchange = e => { view.ft = e.target.value; render(); };
   if ($('copy-claude')) $('copy-claude').onclick = () => copy(claudeText(filtered(d)), 'Gekopieerd. Plak het in je chat met Claude');
-  m.querySelectorAll('[data-mark]').forEach(b => b.onclick = async () => {
-    const [tb, id, status] = b.dataset.mark.split('|');
-    const it = d.items.find(x => x.tab === tb && x.id === id); if (it) { const src = (tb === 'Fouten' ? data.fouten : data.feedback).find(x => (x.fid || x.eid) === id); if (src) src.status = status; }
-    render(); toast(status === 'opgelost' ? 'Gemarkeerd als opgelost' : 'Weer open');
+  const save = async (ref, patch, msg) => {
+    const [tb, id] = ref.split('|');
+    const src = (tb === 'Fouten' ? data.fouten : data.feedback).find(x => (x.fid || x.eid) === id); if (src) Object.assign(src, patch);
+    const y = scrollY; render(); scrollTo(0, y); toast(msg);
     if (DEMO) return;
     const { key, url } = lsGet();
-    try { const j = await fetch(`${url}?key=${encodeURIComponent(key)}&action=mark&tab=${encodeURIComponent(tb)}&id=${encodeURIComponent(id)}&status=${status}`).then(r => r.json()); if (j.error) toast('Niet opgeslagen: ' + j.error); } catch(e) { toast('Niet opgeslagen, probeer het opnieuw'); }
-  });
+    const q = Object.entries(patch).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join('');
+    try { const j = await fetch(`${url}?key=${encodeURIComponent(key)}&action=mark&tab=${encodeURIComponent(tb)}&id=${encodeURIComponent(id)}${q}`).then(r => r.json()); if (j.error) toast('Niet opgeslagen: ' + j.error); } catch(e) { toast('Niet opgeslagen, probeer het opnieuw'); }
+  };
+  m.querySelectorAll('[data-setprio]').forEach(b => b.onclick = () => { const [tb, id, pr] = b.dataset.setprio.split('|'); save(tb + '|' + id, { prio: pr }, 'Prioriteit ' + pr); });
+  m.querySelectorAll('[data-setstatus]').forEach(sel => sel.onchange = () => save(sel.dataset.setstatus, { status: sel.value }, 'Status: ' + sel.options[sel.selectedIndex].text));
+  m.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { view.sort = b.dataset.sort; render(); });
+  m.querySelectorAll('[data-open]').forEach(li => li.onclick = () => { const g = d.groups.find(x => x.key === li.dataset.open); view.ff = 'open'; view.ft = ''; view.sort = 'prio'; tab = 'feedback'; render(); const el = g && $('it-' + g.lead.id); if (el) { el.scrollIntoView({ block: 'center' }); el.animate([{ outline: '3px solid var(--pop)' }, { outline: '3px solid transparent' }], 1600); } });
+  if ($('do-install')) $('do-install').onclick = async () => { installEvt.prompt(); await installEvt.userChoice.catch(() => {}); installEvt = null; render(); };
+  if ($('no-install')) $('no-install').onclick = () => { lsSet({ noInstall: true }); render(); };
   // uitnodigen
   const grp = $('grp');
   if (grp) {
@@ -523,12 +628,14 @@ function demoData(){
     testers.push({ id, name, group, first: iso(first), last: events.filter(e => e.tid === id).map(e => e.at).sort().pop(), days: days.length, events: events.filter(e => e.tid === id).length, device: 'Linux; Android 14; Pixel 7', size: '412×915', version: 'v45', dayList: days.join(',') });
   }
   const fbs = [['SANNE-7K3F', 'Sanne', 'Snap ik niet', 'Waar zie ik hoeveel pasta ik nodig heb tijdens het koken?', 'kookmodus: stap 1 van 6 (Pasta koken)', 5], ['JOOST-Q2MA', 'Joost', 'Werkt niet', 'Timer ging niet af toen mijn scherm uit stond', 'kookmodus: stap 2 van 6 (Kip bruinen)', 1.2], ['MAM-H8TX', 'Mam', 'Mooi', 'Fijn dat je de ingrediënten kunt afvinken!', 'kookmodus: klaarzetten', 3], ['ILSE-4RWP', 'Ilse', 'Idee', 'Boodschappenlijst maken vanuit het recept?', 'receptpagina', 2], ['SANNE-7K3F', 'Sanne', 'Werkt niet', 'Knop Verder reageerde pas na 2x tikken', 'kookmodus: stap 4 van 6 (Saus mengen)', 0.3]];
-  fbs.forEach(([tid, name, type, message, screen, dAgo], k) => feedback.push({ fid: 'f' + k, at: iso(now - dAgo * 864e5), tid, name, type, message, screen, rid: R[0].id, context: '', status: k === 1 ? 'opgelost' : 'nieuw' }));
-  fouten.push({ eid: 'e1', at: iso(now - 0.1 * 864e5), tid: 'BRAM-ZN6C', name: 'Bram', message: "Cannot read properties of undefined (reading 'timer')", source: 'app.js:1094:41', screen: 'kookmodus: stap 3 van 6 (Groente)', rid: R[0].id, version: 'v45', device: 'Linux; Android 13; SM-A536B', stack: "TypeError: Cannot read properties of undefined (reading 'timer')\n    at adjustTimer (app.js:1094:41)\n    at HTMLButtonElement.<anonymous> (app.js:1001:7)", status: 'nieuw' });
+  fbs.push(['MAM-H8TX', 'Mam', 'Werkt niet', 'Verder-knop deed niks bij Saus mengen', 'kookmodus: stap 4 van 6 (Saus mengen)', 0.8], ['ILSE-4RWP', 'Ilse', 'Snap ik niet', 'Hoeveel pasta moet ik pakken?', 'kookmodus: stap 1 van 6 (Pasta koken)', 1.5]);
+  fbs.forEach(([tid, name, type, message, screen, dAgo], k) => feedback.push({ fid: 'f' + k, at: iso(now - dAgo * 864e5), tid, name, type, message, screen, rid: R[0].id, context: '', status: k === 1 ? 'opgelost' : k === 3 ? 'gepland' : 'nieuw', prio: k === 3 ? 'P2' : '' }));
+  fouten.push({ eid: 'e1', at: iso(now - 0.1 * 864e5), tid: 'BRAM-ZN6C', name: 'Bram', message: "Cannot read properties of undefined (reading 'timer')", source: 'app.js:1094:41', screen: 'kookmodus: stap 3 van 6 (Groente)', rid: R[0].id, version: 'v45', device: 'Linux; Android 13; SM-A536B', stack: "TypeError: Cannot read properties of undefined (reading 'timer')\n    at adjustTimer (app.js:1094:41)\n    at HTMLButtonElement.<anonymous> (app.js:1001:7)", status: 'nieuw', prio: '' });
   events.sort((a, b) => a.at.localeCompare(b.at));
   return { generated: iso(now), testers, events, sessies, feedback, fouten };
 }
 
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('dashboard-sw.js', { scope: './dashboard.html' }).catch(() => {});
 load();
 })();
 </script>
