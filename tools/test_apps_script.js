@@ -9,7 +9,8 @@ function mkSheet(name){ const rows = []; const trim = () => { while (rows.length
   getLastRow: () => rows.length,
   getRange(a, b, c, d){
     if (typeof a === 'string') {
-      if (a === 'A:A') return { createTextFinder: v => ({ matchEntireCell: () => ({ findNext: () => { const i = rows.findIndex(r => String(r[0]) === String(v)); return i < 0 ? null : { getRow: () => i + 1 }; } }) }) };
+      const col = a.match(/^([A-Z]):\1$/);
+      if (col) return { createTextFinder: v => ({ matchEntireCell: () => ({ findNext: () => { const i = rows.findIndex(r => String(r[colIdx(col[1])]) === String(v)); return i < 0 ? null : { getRow: () => i + 1 }; } }) }) };
       const m = a.match(/^([A-Z])(\d+)$/);
       if (m) return { getValue: () => (rows[+m[2] - 1] || [])[colIdx(m[1])] ?? '', setValue(v){ rows[+m[2] - 1] = rows[+m[2] - 1] || []; rows[+m[2] - 1][colIdx(m[1])] = v; }, setDataValidation(){ return this; } };
       return { setFontWeight(){ return this; }, setDataValidation(){ return this; }, setBackground(){ return this; } };
@@ -23,6 +24,7 @@ function mkSheet(name){ const rows = []; const trim = () => { while (rows.length
       getValues(){ return [...Array(nr)].map((_, i) => [...Array(nc)].map((_, j) => (rows[r0+i] || [])[c0+j] ?? '')); },
       setFontWeight(){ return this; }, setBackground(){ return this; }, setNumberFormat(){ return this; },
       sort({ column, ascending }){ const part = rows.slice(r0, r0 + nr); part.sort((x, y) => { const a = x[column - 1], b = y[column - 1]; return (a > b ? 1 : a < b ? -1 : 0) * (ascending ? 1 : -1); }); rows.splice(r0, nr, ...part); return this; } }; },
+  deleteRow(r){ rows.splice(r - 1, 1); },
   appendRow(r){ rows.push(r.map(v => typeof v === 'string' && v[0] === "'" ? v.slice(1) : v)); }, hideSheet(){}, getMaxRows: () => Math.max(rows.length, 1000), insertRowsBefore(r, n){ rows.splice(r - 1, 0, ...Array.from({ length: n }, () => [])); }, setFrozenRows(){}, clear(){ rows.length = 0; }, setColumnWidth(){} }; }
 const ss = { setSpreadsheetTimeZone(){}, getSheetByName: n => sheets[n] || null, insertSheet: n => (sheets[n] = mkSheet(n)), getSheets: () => Object.values(sheets), deleteSheet(){} };
 const props = {}, cache = {};
@@ -130,6 +132,33 @@ notes.length = 0; ctx.testMelding(); assert(notes.length === 1 && /test/.test(no
 sheets.Testers.rows[1][10] = new Date('2026-10-12T10:00:00Z');
 post({ tester: T, items: [{ kind: 'open', at: now() }] });
 assert(/^\d{4}-\d{2}-\d{2},\d{4}-\d{2}-\d{2}$/.test(sheets.Testers.rows[1][10]) && sheets.Testers.rows[1][5] === 2, 'actieve dagen: datum uit Sheets wordt weer tekst, geen dubbele telling');
+
+// ---------- bewaren ----------
+post({ tester: T, items: [{ kind: 'feedback', at: now(), type: 'Idee', message: 'bewaar mij' }, { kind: 'feedback', at: now(), type: 'Snap ik niet', message: 'niet doen ding' }, { kind: 'feedback', at: now(), type: 'Mooi', message: 'gepland ding' }] });
+const fbId = msg => sheets.Feedback.rows.find(r => r[5] === msg)[0];
+const kept = () => sheets.Bewaard.rows.slice(1);
+const base = kept().length;   // eerder op 'gepland' gezet = al automatisch bewaard
+assert(get({ key: props.DASHBOARD_KEY, action: 'keep', tab: 'Feedback', id: fbId('bewaar mij') }).ok && kept().length === base + 1 && kept()[0][7] === 'bewaar mij' && kept()[0][12] === 'ster', 'ster: melding bewaard');
+get({ key: props.DASHBOARD_KEY, action: 'keep', tab: 'Feedback', id: fbId('bewaar mij') }); assert(kept().length === base + 1, 'twee keer bewaren: geen dubbele rij');
+assert(!kept()[0].some(v => String(v).includes(T.id)), 'bewaard zonder tester-ID');
+const m1 = get({ key: props.DASHBOARD_KEY, action: 'mark', tab: 'Feedback', id: fbId('niet doen ding'), status: 'niet doen' });
+assert(m1.ok && m1.kept && kept().some(r => r[7] === 'niet doen ding' && r[11] === 'niet doen' && r[12] === 'niet doen'), '"niet doen" wordt automatisch bewaard');
+get({ key: props.DASHBOARD_KEY, action: 'mark', tab: 'Feedback', id: fbId('gepland ding'), status: 'gepland', prio: 'P2' });
+assert(kept().some(r => r[7] === 'gepland ding' && r[12] === 'gepland'), '"gepland" wordt automatisch bewaard');
+get({ key: props.DASHBOARD_KEY, action: 'mark', tab: 'Feedback', id: fbId('gepland ding'), status: 'opgelost' });
+assert(kept().find(r => r[7] === 'gepland ding')[11] === 'opgelost', 'status van het origineel volgt in Bewaard');
+const bid = kept().find(r => r[7] === 'bewaar mij')[0];
+assert(get({ key: props.DASHBOARD_KEY, action: 'mark', tab: 'Bewaard', id: bid, note: 'fixen in v48' }).ok && kept().find(r => r[0] === bid)[13] === 'fixen in v48', 'notitie bij bewaarde melding');
+assert(get({ key: props.DASHBOARD_KEY }).bewaard.length === base + 3, 'dashboard krijgt de bewaarde meldingen');
+assert(get({ key: props.DASHBOARD_KEY, action: 'unkeep', id: fbId('bewaar mij') }).ok && kept().length === base + 2, 'ster uit: niet meer bewaard');
+get({ key: props.DASHBOARD_KEY, action: 'keep', tab: 'Feedback', id: fbId('bewaar mij') });
+const rk = get({ key: props.DASHBOARD_KEY, action: 'delete', ids: T.id, scope: 'all' });
+assert(rk.ok && kept().length === base + 3 && rk.removed.bewaardBlijft === base + 3, 'tester verwijderen: bewaarde meldingen blijven');
+get({ key: props.DASHBOARD_KEY, action: 'undo', batch: rk.batch });
+const rw = get({ key: props.DASHBOARD_KEY, action: 'delete', ids: T.id, scope: 'all', wipeKept: '1' });
+assert(rw.ok && kept().length === 0, 'met vinkje: ook bewaarde meldingen van deze tester gewist');
+get({ key: props.DASHBOARD_KEY, action: 'undo', batch: rw.batch });
+assert(kept().length === base + 3 && sheets.Testers.rows.some(r => r[0] === T.id), 'ongedaan maken zet ook bewaarde meldingen terug');
 
 // ---------- verwijderen ----------
 const K = props.DASHBOARD_KEY, T2 = { id: 'JOOST-Q2MA', name: 'Joost', group: 'vrienden' };

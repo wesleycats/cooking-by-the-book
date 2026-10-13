@@ -27,8 +27,8 @@ const NOTIFY = { errors: true, feedback: true, newTester: true };
 const BUDGET = { pushPerDay: 60, mailPerDay: 40 };
 const DEFAULT_HOURS = { urgent: 1, rest: 6 };
 // logboeken: nieuwste bovenaan, tijd tot op de seconde
-const TIME_COLS = { Events: ['at'], Feedback: ['at'], Fouten: ['at'], Sessies: ['updated'], Testers: ['first', 'last'] };
-const NEWEST_FIRST = { Events: 'at', Feedback: 'at', Fouten: 'at', Sessies: 'updated' };
+const TIME_COLS = { Events: ['at'], Feedback: ['at'], Fouten: ['at'], Sessies: ['updated'], Testers: ['first', 'last'], Bewaard: ['savedAt', 'at'] };
+const NEWEST_FIRST = { Events: 'at', Feedback: 'at', Fouten: 'at', Sessies: 'updated', Bewaard: 'savedAt' };
 const TIME_FMT = 'dd-mm-yyyy HH:mm:ss';
 // prioriteit per feedbacksoort (ntfy: 5 = urgent, 4 = hoog, 3 = normaal met geluid, 2 = stil)
 const FB_PRIO = { 'Werkt niet': [4, 'bug', '🐞'], 'Snap ik niet': [3, 'question', '❓'], 'Idee': [3, 'bulb', '💡'], 'Mooi': [2, 'heart', '♥'] };
@@ -39,7 +39,9 @@ const TABS = {
   Events:   [['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['kind','Soort'],['rid','Recept-ID'],['step','Stap'],['screen','Scherm'],['details','Details']],
   Sessies:  [['sid','Sessie-ID'],['tid','Tester-ID'],['name','Naam'],['rid','Recept-ID'],['title','Recept'],['date','Datum'],['servings','Porties'],['min','Kooktijd (min)'],['recipeMin','Recepttijd (min)'],['rating','Sterren'],['chips','Chips'],['note','Notitie'],['adj','Timeraanpassingen'],['updated','Bijgewerkt']],
   Feedback: [['fid','ID'],['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['type','Soort'],['message','Bericht'],['screen','Scherm'],['rid','Recept-ID'],['context','Context'],['status','Status'],['prio','Prioriteit']],
-  Fouten:   [['eid','ID'],['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['message','Melding'],['source','Bron'],['screen','Scherm'],['rid','Recept-ID'],['version','Versie'],['device','Toestel'],['stack','Stack'],['status','Status'],['prio','Prioriteit']]
+  Fouten:   [['eid','ID'],['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['message','Melding'],['source','Bron'],['screen','Scherm'],['rid','Recept-ID'],['version','Versie'],['device','Toestel'],['stack','Stack'],['status','Status'],['prio','Prioriteit']],
+  // bewaarde meldingen: los van testers, dus verwijderen raakt ze niet (geen tester-ID, geen toestel)
+  Bewaard:  [['bid','ID'],['src','Bron-ID'],['srcTab','Bron'],['savedAt','Bewaard op'],['at','Tijd'],['name','Naam'],['type','Soort'],['message','Bericht'],['screen','Scherm'],['rid','Recept-ID'],['prio','Prioriteit'],['status','Status'],['reason','Reden'],['note','Notitie']]
 };
 
 /* ---------- eenmalig ---------- */
@@ -281,21 +283,62 @@ function doGet(e) {
   }
   if (!p.key || p.key !== PropertiesService.getScriptProperties().getProperty('DASHBOARD_KEY')) return json_({ error: 'Ongeldige sleutel' });
   const ss = SpreadsheetApp.getActive();
-  if (p.action === 'mark') {                       // status van feedback of fout bijwerken vanuit het dashboard
-    const tab = p.tab === 'Fouten' ? 'Fouten' : 'Feedback', sh = ss.getSheetByName(tab);
-    const f = sh.getRange('A:A').createTextFinder(String(p.id || '')).matchEntireCell(true).findNext();
-    if (!f || f.getRow() < 2) return json_({ error: 'Niet gevonden' });
-    const cols = TABS[tab].map(c => c[0]);
-    const STATUS = ['nieuw', 'gepland', 'opgelost', 'niet doen'], PRIO = ['P1', 'P2', 'P3', ''];
-    if (p.status != null) { if (!STATUS.includes(p.status)) return json_({ error: 'Onbekende status' }); sh.getRange(f.getRow(), cols.indexOf('status') + 1).setValue(p.status); }
-    if (p.prio != null) { if (!PRIO.includes(p.prio)) return json_({ error: 'Onbekende prioriteit' }); sh.getRange(f.getRow(), cols.indexOf('prio') + 1).setValue(p.prio); }
-    return json_({ ok: true });
-  }
-  if (p.action === 'delete') return json_(deleteTesters_(ss, String(p.ids || ''), p.scope === 'all' ? 'all' : 'data'));
+  if (p.action === 'mark') return json_(mark_(ss, p));
+  if (p.action === 'keep') return json_(keep_(ss, p.tab === 'Fouten' ? 'Fouten' : 'Feedback', String(p.id || ''), 'ster'));
+  if (p.action === 'unkeep') return json_(unkeep_(ss, String(p.id || '')));
+  if (p.action === 'delete') return json_(deleteTesters_(ss, String(p.ids || ''), p.scope === 'all' ? 'all' : 'data', p.wipeKept === '1'));
   if (p.action === 'undo') return json_(undoDelete_(ss, String(p.batch || '')));
   const out = { generated: new Date().toISOString() };
   for (const [name, cols] of Object.entries(TABS)) out[name.toLowerCase()] = rows_(ss, name, cols, name === 'Events' ? 8000 : 2000);
   return json_(out);
+}
+
+/* ---------- status, prioriteit en bewaren (dashboard) ----------
+   Gepland en Niet doen worden automatisch bewaard (tabblad Bewaard), zodat beslissingen blijven als testers weg zijn.
+   Een bewaarde melding volgt status en prioriteit van het origineel; daarna is ze zelf aan te passen (tab=Bewaard). */
+const STATUSES = ['nieuw', 'gepland', 'opgelost', 'niet doen'], PRIOS = ['P1', 'P2', 'P3', ''];
+function findRow_(sh, id) { if (!id) return 0; const f = sh.getRange('A:A').createTextFinder(id).matchEntireCell(true).findNext(); return f && f.getRow() >= 2 ? f.getRow() : 0; }
+function findKept_(ss, src) {
+  const sh = ss.getSheetByName('Bewaard'); if (!sh || !src) return 0;
+  const f = sh.getRange('B:B').createTextFinder(src).matchEntireCell(true).findNext(); return f && f.getRow() >= 2 ? f.getRow() : 0;
+}
+function mark_(ss, p) {
+  if (p.status != null && !STATUSES.includes(p.status)) return { error: 'Onbekende status' };
+  if (p.prio != null && !PRIOS.includes(p.prio)) return { error: 'Onbekende prioriteit' };
+  const tab = ['Fouten', 'Bewaard'].includes(p.tab) ? p.tab : 'Feedback', sh = ss.getSheetByName(tab), id = String(p.id || '');
+  const r = findRow_(sh, id); if (!r) return { error: 'Niet gevonden' };
+  const cols = TABS[tab].map(c => c[0]), set = (k, v) => sh.getRange(r, cols.indexOf(k) + 1).setValue(v);
+  if (p.status != null) set('status', p.status);
+  if (p.prio != null) set('prio', p.prio);
+  if (p.note != null && tab === 'Bewaard') set('note', String(p.note).slice(0, 500));
+  let kept = null;
+  if (tab !== 'Bewaard') {
+    const k = findKept_(ss, id);
+    if (k) { const b = ss.getSheetByName('Bewaard'), bc = TABS.Bewaard.map(c => c[0]);
+      if (p.status != null) b.getRange(k, bc.indexOf('status') + 1).setValue(p.status);
+      if (p.prio != null) b.getRange(k, bc.indexOf('prio') + 1).setValue(p.prio);
+      kept = b.getRange(k, 1).getValue(); }
+    else if (p.status === 'gepland' || p.status === 'niet doen') kept = keep_(ss, tab, id, p.status).bid;
+  }
+  return { ok: true, kept };
+}
+function keep_(ss, tab, id, reason) {
+  const existing = findKept_(ss, id); if (existing) return { ok: true, bid: ss.getSheetByName('Bewaard').getRange(existing, 1).getValue() };
+  const sh = ss.getSheetByName(tab), r = findRow_(sh, id); if (!r) return { error: 'Niet gevonden' };
+  const cols = TABS[tab].map(c => c[0]), row = sh.getRange(r, 1, 1, cols.length).getValues()[0], v = k => row[cols.indexOf(k)];
+  const bid = shortId_();
+  top_(sheet_(ss, 'Bewaard'), [[bid, id, tab, new Date(), v('at'), v('name'), tab === 'Fouten' ? 'Fout' : v('type'), v('message'), v('screen'), v('rid'), v('prio'), v('status'), reason, '']], 'Bewaard');
+  return { ok: true, bid };
+}
+function unkeep_(ss, id) {
+  const sh = ss.getSheetByName('Bewaard'); if (!sh) return { error: 'Niet gevonden' };
+  const r = findRow_(sh, id) || findKept_(ss, id); if (!r) return { error: 'Niet gevonden' };
+  sh.deleteRow(r); return { ok: true };
+}
+function sheet_(ss, name) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) { sh = ss.insertSheet(name); const cols = TABS[name]; sh.getRange(1, 1, 1, cols.length).setValues([cols.map(c => c[1])]).setFontWeight('bold').setBackground('#e8f0e6'); sh.setFrozenRows(1); }
+  return sh;
 }
 
 /* ---------- verwijderen (dashboard) ----------
@@ -309,13 +352,13 @@ function trash_(ss) {
   if (!sh) { sh = ss.insertSheet('Prullenbak'); sh.getRange(1, 1, 1, 5).setValues([['Verwijderd op', 'Batch', 'Tabblad', 'Tester-ID', 'Rij (JSON)']]).setFontWeight('bold'); sh.setFrozenRows(1); try { sh.hideSheet(); } catch (e) {} }
   return sh;
 }
-function deleteTesters_(ss, idsParam, scope) {
+function deleteTesters_(ss, idsParam, scope, wipeKept) {
   const lock = LockService.getScriptLock(); lock.waitLock(20000);
   try {
     const all = idsParam === '*';
     const ids = new Set(all ? [] : idsParam.split(',').map(x => x.trim()).filter(x => /^[A-Z0-9]{1,8}-[A-Z0-9]{4}$/.test(x)));
     if (!all && !ids.size) return { error: 'Geen testers gekozen' };
-    const batch = shortId_(), now = new Date(), trash = [], removed = {}, removedIds = new Set();
+    const batch = shortId_(), now = new Date(), trash = [], removed = {}, removedIds = new Set(), srcIds = new Set();
     for (const [tab, cols] of Object.entries(TABS)) {
       if (!TID_COL[tab] || (tab === 'Testers' && scope !== 'all')) continue;
       const sh = ss.getSheetByName(tab), last = sh.getLastRow(); if (last < 2) continue;
@@ -323,12 +366,23 @@ function deleteTesters_(ss, idsParam, scope) {
       const vals = sh.getRange(2, 1, last - 1, width).getValues(), keep = [];
       for (const row of vals) {
         const hit = all ? String(row[ci] || '') !== '' : ids.has(String(row[ci]));
-        if (hit) { trash.push([now, batch, tab, String(row[ci]), JSON.stringify(row)]); removedIds.add(String(row[ci])); } else keep.push(row);
+        if (hit) { trash.push([now, batch, tab, String(row[ci]), JSON.stringify(row)]); removedIds.add(String(row[ci])); if (tab === 'Feedback' || tab === 'Fouten') srcIds.add(String(row[0])); } else keep.push(row);
       }
       removed[tab] = vals.length - keep.length;
       if (!removed[tab]) continue;
       sh.getRange(2, 1, last - 1, width).clearContent();
       if (keep.length) sh.getRange(2, 1, keep.length, width).setValues(keep);
+    }
+    // bewaarde meldingen blijven, tenzij Wes ook die van deze testers wil wissen (bv. AVG-verzoek)
+    const kept = ss.getSheetByName('Bewaard');
+    if (kept && kept.getLastRow() > 1) {
+      const w = TABS.Bewaard.length, vals = kept.getRange(2, 1, kept.getLastRow() - 1, w).getValues();
+      const hit = r => srcIds.has(String(r[1])), gone = vals.filter(hit);
+      removed.Bewaard = wipeKept ? gone.length : 0; removed.bewaardBlijft = wipeKept ? 0 : gone.length;
+      if (wipeKept && gone.length) {
+        gone.forEach(r => trash.push([now, batch, 'Bewaard', '', JSON.stringify(r)]));
+        const keep = vals.filter(r => !hit(r)); kept.getRange(2, 1, vals.length, w).clearContent(); if (keep.length) kept.getRange(2, 1, keep.length, w).setValues(keep);
+      }
     }
     if (trash.length) { const t = trash_(ss); t.getRange(t.getLastRow() + 1, 1, trash.length, 5).setValues(trash); }
     if (scope === 'all') {
