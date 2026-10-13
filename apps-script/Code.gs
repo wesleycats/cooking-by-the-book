@@ -19,7 +19,11 @@
  */
 
 const TZ = 'Europe/Amsterdam';
-const NOTIFY = { errors: true, feedback: true, newTester: true, maxPerHour: 20 };
+const NOTIFY = { errors: true, feedback: true, newTester: true };
+// ntfy.sh (gratis) telt per IP: 250 berichten/dag, 60 achter elkaar, daarna 1 per 5 s. Apps Script deelt IP's met andere
+// scripts, dus we blijven er ruim onder: urgent (prioriteit ≥ 4) direct en samengevoegd per verzoek, de rest als bundel
+// hooguit eens per DIGEST_MIN minuten, een eigen dagbudget, en bij een mislukte push gratis per mail (MailApp, 100/dag).
+const BUDGET = { pushPerDay: 60, mailPerDay: 20, digestMin: 30 };
 // prioriteit per feedbacksoort (ntfy: 5 = urgent, 4 = hoog, 3 = normaal met geluid, 2 = stil)
 const FB_PRIO = { 'Werkt niet': [4, 'bug', '🐞'], 'Snap ik niet': [3, 'question', '❓'], 'Idee': [3, 'bulb', '💡'], 'Mooi': [2, 'heart', '♥'] };
 
@@ -47,18 +51,24 @@ function setup() {
   if (!props.getProperty('NTFY_TOPIC')) props.setProperty('NTFY_TOPIC', 'cbtb-' + randomId(18));
   if (!props.getProperty('DASHBOARD_KEY')) props.setProperty('DASHBOARD_KEY', randomId(24));
   const set = ss.getSheetByName('Instellingen') || ss.insertSheet('Instellingen');
-  const keepUrl = String(set.getRange('B4').getValue() || '');   // web-app-URL bewaren bij opnieuw uitvoeren
+  const keep = c => String(set.getRange(c).getValue() || '');      // wat Wes zelf invulde, bewaren bij opnieuw uitvoeren
+  const keepUrl = keep('B4'), keepToken = keep('B7'), keepMail = keep('B8');
   set.clear();
-  set.getRange(1, 1, 6, 2).setValues([
+  set.getRange(1, 1, 8, 2).setValues([
     ['Meldingskanaal (ntfy)', props.getProperty('NTFY_TOPIC')],
     ['Abonneren', 'Installeer de app "ntfy" → + → vul het meldingskanaal hierboven in (server ntfy.sh)'],
     ['Dashboardsleutel', props.getProperty('DASHBOARD_KEY')],
     ['Web-app-URL', keepUrl.startsWith('http') ? keepUrl : '(plak hier de /exec-URL na Implementeren)'],
     ['Dashboard', '=IF(LEFT(B4,4)="http","https://wesleycats.github.io/cooking-by-the-book/dashboard.html#k="&B3&"&u="&ENCODEURL(B4),"vul eerst B4 in")'],
-    ['Let op', 'Deel de sleutel en het kanaal niet: wie ze heeft, ziet de testgegevens of je meldingen.']
+    ['Let op', 'Deel de sleutel, het kanaal en de token niet: wie ze heeft, ziet de testgegevens of je meldingen.'],
+    ['ntfy-token (optioneel)', keepToken || '(leeg = zonder account; plak hier een gratis ntfy.sh-token, begint met tk_)'],
+    ['Reserve per mail', keepMail || 'ja']
   ]);
-  set.getRange('A1:A6').setFontWeight('bold'); set.setColumnWidth(1, 190); set.setColumnWidth(2, 520);
-  notify_('Proefkeuken', 'Meldingen werken. Je krijgt hier een bericht bij een fout of "Werkt niet".', 3, ['white_check_mark']);
+  set.getRange('A1:A8').setFontWeight('bold'); set.setColumnWidth(1, 190); set.setColumnWidth(2, 520);
+  // bundel-trigger: verstuurt opgespaarde meldingen ook als er even niets binnenkomt
+  if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'digestVersturen'))
+    ScriptApp.newTrigger('digestVersturen').timeBased().everyMinutes(10).create();
+  deliver_('Proefkeuken', 'Meldingen werken. Fouten en "Werkt niet" komen direct, de rest gebundeld.', 3, ['white_check_mark']);
 }
 
 function randomId(n) {
@@ -100,7 +110,7 @@ function doPost(e) {
     }
     append_(ss, 'Events', events); append_(ss, 'Feedback', feedback); append_(ss, 'Fouten', errors);
     if (isNew && NOTIFY.newTester) alerts.push(['👋 Nieuwe tester: ' + name, (group ? 'Groep: ' + group + ' · ' : '') + 'ID ' + t.id, 3, ['wave']]);
-    alerts.forEach(a => notify_(a[0], a[1], a[2], a[3]));
+    dispatch_(alerts);
   } finally { lock.releaseLock(); }
   return text_('ok');
 }
@@ -129,28 +139,72 @@ function upsertSession_(ss, tid, name, it) {
 }
 
 /* ---------- meldingen (ntfy) ---------- */
-function notify_(title, message, priority, tags) {
-  const props = PropertiesService.getScriptProperties(), topic = props.getProperty('NTFY_TOPIC');
-  if (!topic) { console.warn('Geen NTFY_TOPIC: voer setup uit'); return 0; }
-  const cache = CacheService.getScriptCache(), n = Number(cache.get('notify-count') || 0);
-  if (n >= NOTIFY.maxPerHour) { console.warn('Meldingslimiet bereikt'); return 0; }   // nooit een stortvloed op je telefoon
-  cache.put('notify-count', String(n + 1), 3600);
-  const msg = { topic, title, message, priority, tags };
-  const url = dashboardUrl_(); if (url) msg.click = url + '&tab=feed';
-  try {
-    const r = UrlFetchApp.fetch('https://ntfy.sh/', { method: 'post', contentType: 'application/json', payload: JSON.stringify(msg), muteHttpExceptions: true });
-    if (r.getResponseCode() !== 200) console.error('ntfy ' + r.getResponseCode() + ': ' + r.getContentText().slice(0, 300));
-    return r.getResponseCode();
-  } catch (err) { console.error('ntfy niet bereikbaar: ' + err); return -1; }
+/* ---------- meldingen ---------- */
+function dispatch_(alerts) {
+  if (!alerts.length) return;
+  const urgent = alerts.filter(a => a[2] >= 4), rest = alerts.filter(a => a[2] < 4);
+  if (rest.length) queue_(rest);
+  if (urgent.length === 1) deliver_(urgent[0][0], urgent[0][1], 4, urgent[0][3]);
+  else if (urgent.length > 1) deliver_('⚠️ ' + urgent.length + ' dringende meldingen', urgent.map(a => a[0] + ' — ' + a[1].split('\n')[0]).join('\n'), 4, ['warning']);
+  digestVersturen(false);
 }
+function queue_(alerts) {
+  const p = PropertiesService.getScriptProperties(), q = JSON.parse(p.getProperty('DIGEST') || '[]');
+  alerts.forEach(a => q.push([a[0], String(a[1]).split('\n')[0].slice(0, 160)]));
+  p.setProperty('DIGEST', JSON.stringify(q.slice(-60)));
+}
+/** Verstuurt de bundel als de vorige minstens BUDGET.digestMin minuten geleden is (tijdtrigger elke 10 min). */
+function digestVersturen(force) {
+  const p = PropertiesService.getScriptProperties(), q = JSON.parse(p.getProperty('DIGEST') || '[]');
+  if (!q.length) return;
+  if (force !== true && Date.now() - Number(p.getProperty('DIGEST_AT') || 0) < BUDGET.digestMin * 60000) return;
+  const title = q.length === 1 ? q[0][0] : '📋 ' + q.length + ' nieuwe meldingen';
+  const body = q.length === 1 ? q[0][1] : q.slice(0, 12).map(x => '• ' + x[0] + (x[1] ? ' — ' + x[1] : '')).join('\n') + (q.length > 12 ? '\n… en ' + (q.length - 12) + ' meer in het dashboard' : '');
+  if (deliver_(title, body.slice(0, 3500), 3, ['clipboard'])) { p.setProperty('DIGEST', '[]'); p.setProperty('DIGEST_AT', String(Date.now())); }
+}
+/** Eén pushbericht; mislukt het (limiet, storing, budget op), dan per mail. Geeft true als het ergens is aangekomen. */
+function deliver_(title, message, priority, tags) {
+  const p = PropertiesService.getScriptProperties(), topic = p.getProperty('NTFY_TOPIC');
+  const day = Utilities.formatDate(new Date(), 'UTC', 'yyyy-MM-dd');          // ntfy telt per UTC-dag
+  const used = JSON.parse(p.getProperty('PUSH_DAY') || '{}'), n = used.d === day ? used.n : 0;
+  let ok = false, why = '';
+  if (!topic) why = 'geen kanaal: voer setup uit';
+  else if (n >= BUDGET.pushPerDay) why = 'eigen dagbudget van ' + BUDGET.pushPerDay + ' pushberichten op';
+  else {
+    p.setProperty('PUSH_DAY', JSON.stringify({ d: day, n: n + 1 }));
+    const msg = { topic, title: String(title).slice(0, 200), message: String(message).slice(0, 3800), priority, tags };
+    const url = dashboardUrl_(); if (url) msg.click = url + '&tab=feedback';
+    const headers = {}, token = setting_('B7'); if (/^tk_/.test(token)) headers.Authorization = 'Bearer ' + token;
+    try {
+      const r = UrlFetchApp.fetch('https://ntfy.sh/', { method: 'post', contentType: 'application/json', headers, payload: JSON.stringify(msg), muteHttpExceptions: true });
+      ok = r.getResponseCode() === 200;
+      if (!ok) why = 'ntfy ' + r.getResponseCode() + (r.getResponseCode() === 429 ? ' (limiet van ntfy.sh)' : '') + ': ' + r.getContentText().slice(0, 200);
+    } catch (err) { why = 'ntfy niet bereikbaar: ' + err; }
+  }
+  if (ok) return true;
+  console.warn('Push mislukt: ' + why);
+  return mail_(title, message + '\n\n— Per mail omdat de pushmelding niet lukte (' + why + ').');
+}
+function mail_(title, body) {
+  if (/^n/i.test(setting_('B8'))) return false;
+  const p = PropertiesService.getScriptProperties(), day = Utilities.formatDate(new Date(), 'UTC', 'yyyy-MM-dd');
+  const used = JSON.parse(p.getProperty('MAIL_DAY') || '{}'), n = used.d === day ? used.n : 0;
+  if (n >= BUDGET.mailPerDay) { console.warn('Ook mailbudget op'); return false; }
+  try {
+    MailApp.sendEmail({ to: Session.getEffectiveUser().getEmail(), subject: '[Proefkeuken] ' + title, body: body + (dashboardUrl_() ? '\n\nDashboard: ' + dashboardUrl_() + '&tab=feedback' : '') });
+    p.setProperty('MAIL_DAY', JSON.stringify({ d: day, n: n + 1 }));
+    return true;
+  } catch (err) { console.error('Mail mislukt: ' + err); return false; }
+}
+function setting_(cell) { const set = SpreadsheetApp.getActive().getSheetByName('Instellingen'); return set ? String(set.getRange(cell).getValue() || '').trim() : ''; }
 
 /** Handmatige test: kies `testMelding` → Uitvoeren. Het logboek onderin laat zien wat er gebeurt. */
 function testMelding() {
-  const topic = PropertiesService.getScriptProperties().getProperty('NTFY_TOPIC');
-  console.log('Kanaal: ' + topic + '  (moet exact gelijk zijn aan het abonnement in de ntfy-app)');
-  CacheService.getScriptCache().remove('notify-count');
-  const code = notify_('🔔 Proefkeuken test', 'Als je dit ziet, werken de meldingen.', 4, ['bell']);
-  console.log(code === 200 ? 'Verstuurd naar ntfy (200). Komt hij niet binnen? Dan klopt het kanaal in de app niet of slaapt de app.' : 'Mislukt, code: ' + code);
+  const p = PropertiesService.getScriptProperties();
+  console.log('Kanaal: ' + p.getProperty('NTFY_TOPIC') + '  (moet exact gelijk zijn aan het abonnement in de ntfy-app)');
+  console.log('Token: ' + (/^tk_/.test(setting_('B7')) ? 'ja (limiet per account)' : 'nee (limiet per gedeeld Google-IP)') + ' · vandaag verstuurd: ' + (JSON.parse(p.getProperty('PUSH_DAY') || '{}').n || 0) + '/' + BUDGET.pushPerDay);
+  const ok = deliver_('🔔 Proefkeuken test', 'Als je dit ziet, werken de meldingen.', 4, ['bell']);
+  console.log(ok ? 'Aangekomen (push, of per mail als push niet lukte: zie waarschuwing hierboven).' : 'Niet aangekomen: zie de waarschuwingen hierboven.');
 }
 
 function dashboardUrl_() {
