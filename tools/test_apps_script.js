@@ -183,6 +183,7 @@ assert(get({ action: 'status', id: T.id }).status === 'deleted', 'alles verwijde
 assert(get({ key: K, action: 'undo', batch: r3.batch }).ok && sheets.Events.rows.length === evBefore && sheets.Testers.rows.length === 3, 'alles ongedaan maken: alles terug');
 
 // ---------- opslaan betrouwbaar (13 okt) ----------
+assert(/^s\d+$/.test(get({ key: K }).script), 'dashboard-data noemt de scriptversie (bv. s4)');
 assert(get({ key: K }).api >= 3, 'dashboard-data noemt de API-versie (dashboard waarschuwt bij een oud script)');
 assert(/Onbekende actie/.test(get({ key: K, action: 'bestaatniet' }).error || ''), 'onbekende actie geeft een fout, geen data');
 const ids = [...Array(400)].map(() => ctx.shortId_());

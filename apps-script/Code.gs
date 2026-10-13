@@ -13,7 +13,8 @@
  *     en stuurt een testmelding.
  *   - Implementeren → Nieuwe implementatie → type Web-app → Uitvoeren als: ikzelf; Toegang: Iedereen → Implementeren.
  *     Kopieer de web-app-URL (eindigt op /exec) en zet die in tabblad Instellingen bij "Web-app-URL".
- * Na een wijziging in dit script: Implementeren → Implementaties beheren → potlood → Versie: Nieuwe versie.
+ * Na een wijziging in dit script: Implementeren → Implementaties beheren → potlood → Versie: Nieuwe versie,
+ * met als Beschrijving het nummer uit SCRIPT_VERSION (bv. s4). Het dashboard toont dat nummer bovenin.
  *
  * Er staan geen geheimen in deze code: kanaal en sleutel staan in de scripteigenschappen (setup) en in Instellingen.
  */
@@ -21,6 +22,8 @@
 const TZ = 'Europe/Amsterdam';
 // versie van de dashboard-API: het dashboard waarschuwt als het script ouder is dan het verwacht (nieuwe versie niet geïmplementeerd)
 const API_VERSION = 3;
+// versie van deze code; ophogen bij elke wijziging. Zet hetzelfde nummer bij Implementaties beheren → Nieuwe versie → Beschrijving.
+const SCRIPT_VERSION = 's4';
 const NOTIFY = { errors: true, feedback: true, newTester: true };
 // ntfy.sh (gratis) telt per IP: 250 berichten/dag, 60 achter elkaar. Apps Script deelt IP's met andere scripts, dus
 // alles wordt gebundeld: urgent (fout, "Werkt niet") en overig elk in een eigen bundel, die pas vertrekt als de oudste
@@ -290,8 +293,8 @@ function doGet(e) {
   if (p.action === 'unkeep') return json_(unkeep_(ss, String(p.id || '')));
   if (p.action === 'delete') return json_(deleteTesters_(ss, String(p.ids || ''), p.scope === 'all' ? 'all' : 'data', p.wipeKept === '1'));
   if (p.action === 'undo') return json_(undoDelete_(ss, String(p.batch || '')));
-  if (p.action) return json_({ error: 'Onbekende actie: ' + p.action, api: API_VERSION });
-  const out = { generated: new Date().toISOString(), api: API_VERSION };
+  if (p.action) return json_({ error: 'Onbekende actie: ' + p.action, api: API_VERSION, script: SCRIPT_VERSION });
+  const out = { generated: new Date().toISOString(), api: API_VERSION, script: SCRIPT_VERSION };
   for (const [name, cols] of Object.entries(TABS)) out[name.toLowerCase()] = rows_(ss, name, cols, name === 'Events' ? 8000 : 2000);
   return json_(out);
 }

@@ -247,7 +247,7 @@ table.tbl td.n{text-align:right;font-family:var(--f-mono)}
 <header class="top">
   <div class="wrap">
     <div class="row">
-      <div class="brand">Proefkeuken<small>Testoverzicht · alpha</small></div>
+      <div class="brand">Proefkeuken<small id="ver">Testoverzicht · alpha</small></div>
       <span class="spacer"></span>
       <div class="upd" id="upd"></div>
       <button class="iconbtn" id="reload" type="button" aria-label="Vernieuwen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
@@ -313,6 +313,18 @@ async function api(q = ''){
    Een verouderd script kent de actie niet en stuurt gewoon alle data terug: dat is NIET gelukt. */
 const NEED_API = 3;
 const oldScript = () => !DEMO && data && !(Number(data.api) >= NEED_API);
+/* Versies: DASH_VERSION = dit dashboard (ophogen bij elke wijziging), LATEST_SCRIPT = nieuwste Code.gs in de repo.
+   Het script stuurt zijn eigen nummer mee (SCRIPT_VERSION); scripts van vóór s4 hebben dat nog niet. */
+const DASH_VERSION = 'd4', LATEST_SCRIPT = 's4';
+const scriptVer = () => !data ? '' : data.script ? String(data.script) : Number(data.api) >= 3 ? 's3' : 'oud';
+const vnum = v => parseInt(String(v).replace(/\D/g, ''), 10) || 0;
+function renderVersion(){
+  const el = $('ver'); if (!el) return;
+  if (DEMO || !data) { el.textContent = 'Dashboard ' + DASH_VERSION; el.title = ''; return; }
+  const sv = scriptVer(), behind = vnum(sv) < vnum(LATEST_SCRIPT);
+  el.innerHTML = 'Dashboard ' + DASH_VERSION + ' · Script <span style="' + (behind ? 'color:var(--pop);font-weight:600' : '') + '">' + esc(sv) + (behind ? ' → ' + LATEST_SCRIPT : '') + '</span>';
+  el.title = behind ? 'Er is een nieuwere Code.gs (' + LATEST_SCRIPT + '). Plak hem in Apps Script en implementeer een nieuwe versie met beschrijving ' + LATEST_SCRIPT + '.' : 'Script is up-to-date';
+}
 async function act(q){
   const j = await api(q);
   if (j && j.ok) return j;
@@ -411,10 +423,10 @@ function renderTabs(openBugs){
 function render(){
   const d = derive();
   const openBugs = d.groups.filter(g => g.prio === 'P1').length;
-  renderTabs(openBugs);
+  renderTabs(openBugs); renderVersion();
   $('upd').innerHTML = DEMO ? 'voorbeelddata' : 'bijgewerkt<br>' + fmtTime(data.generated);
   const m = $('main');
-  const stale = oldScript() ? '<p class="demo-banner" style="background:var(--danger-soft)"><b>Opslaan werkt nog niet:</b> je Sheet draait een oude versie van het script. Bewaren (★), status, prioriteit en verwijderen worden dan niet opgeslagen. Oplossen: Sheet → Extensies → Apps Script → plak de nieuwste Code.gs → opslaan → voer <b>setup</b> uit → Implementeren → Implementaties beheren → potlood → Versie: <b>Nieuwe versie</b> → Implementeren. Daarna dit dashboard vernieuwen.</p>' : '';
+  const stale = oldScript() ? '<p class="demo-banner" style="background:var(--danger-soft)"><b>Opslaan werkt nog niet:</b> je Sheet draait een oude versie van het script (' + esc(scriptVer()) + ', nodig: ' + LATEST_SCRIPT + '). Bewaren (★), status, prioriteit en verwijderen worden dan niet opgeslagen. Oplossen: Sheet → Extensies → Apps Script → plak de nieuwste Code.gs → opslaan → voer <b>setup</b> uit → Implementeren → Implementaties beheren → potlood → Versie: <b>Nieuwe versie</b>, Beschrijving: <b>' + LATEST_SCRIPT + '</b> → Implementeren. Daarna dit dashboard vernieuwen.</p>' : '';
   const banner = stale + (DEMO ? '<p class="demo-banner">Je kijkt naar <b>voorbeelddata</b>. Open het dashboard via de link in je Sheet (tabblad Instellingen) voor je echte testers.</p>' : '');
   m.innerHTML = banner + ({ overzicht, testers: testersPane, recepten, feedback: feedbackPane, uitnodigen }[tab] || overzicht)(d);
   document.body.classList.toggle('selecting', tab === 'testers' && !!view.sel && view.sel.size > 0);

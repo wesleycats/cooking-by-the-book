@@ -302,6 +302,8 @@ async def main():
             warn = lambda: pg.locator('text=Opslaan werkt nog niet').count()
             tag = 'oud script' if stale else 'nieuw script'
             ok(f'dashboard ({tag}): waarschuwing bovenaan ' + ('zichtbaar' if stale else 'afwezig'), (await warn() > 0) == stale)
+            ver = await pg.inner_text('#ver')
+            ok(f'dashboard ({tag}): versie bovenin', ver.startswith('Dashboard d') and (('Script oud' in ver) if stale else ('Script s3 → s4' in ver)), ver)
             await pg.click('[data-tab="feedback"]'); await pg.wait_for_timeout(200)
             await pg.locator('.item').first.locator('.star').click(); await pg.wait_for_timeout(300)
             t = await pg.inner_text('#toast')
