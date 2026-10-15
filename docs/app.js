@@ -296,7 +296,11 @@ function render(){
   document.getElementById('test-btn').setAttribute('aria-pressed', hh === 'test');
   document.getElementById('stats-btn').setAttribute('aria-pressed', hh === 'keuken');
   newBtn.hidden = !canWrite;
+  const gated = !!TESTER && !testerConsent();
+  document.documentElement.classList.toggle('gated', gated);
   if (!loaded) return;
+  if (gated) return renderGate();   // test version: sign up first, nothing else works before that
+  if (TESTER) setTimeout(showNews, 400);   // what's new after an update: on any page, never during cooking
   obTips();   // a tip from the previous page goes, one for this page may appear
   const h = location.hash.slice(1);
   if (h === 'nieuw') return canWrite ? renderEditor(null) : renderLibrary();
@@ -341,6 +345,7 @@ function renderLibrary(){
     <div class="count">${groups.length} ${groups.length===1?'GERECHT':'GERECHTEN'}</div>
     ${recipes.length===0 ? emptyAll() : groups.length===0 ? `<div class="empty"><h2>Niets gevonden</h2><p>Probeer een ander woord of kies een ander filter.</p></div>` :
     `<div class="grid">${groups.map(g=>card(g.r,g.n)).join('')}</div>`}
+    ${verFoot()}
   </div>`;
 
   const qi = document.getElementById('q');
@@ -1413,7 +1418,8 @@ function bindArchive(){
 }
 
 /* ---------- testmenu ---------- */
-const APP_VERSION = 'v49 · 13 okt 2026';
+const APP_VERSION = 'v50 · 15 okt 2026';
+const APP_V = APP_VERSION.split(' ')[0];   // short form (v50): footer, update popup
 let lastSync = null, syncErr = null, wakeState = 'nog niet gebruikt', vibrateState = 'nog niet getest';
 const ago = t => { if (!t) return 'nog niet'; const s = Math.round((Date.now() - t) / 1000); return s < 60 ? `${s} s geleden` : s < 3600 ? `${Math.round(s/60)} min geleden` : `${Math.round(s/3600)} uur geleden`; };
 function testVibrate(){ let ok = false; try { ok = !!navigator.vibrate?.([120, 80, 120]); } catch(e) {} vibrateState = ok ? 'werkt' : 'geblokkeerd'; return ok; }
@@ -1640,7 +1646,7 @@ function openFeedback(){
   obTips();
 }
 function testerWelcome(){
-  if (!TESTER || lsGet('kb-tester-welcomed', false)) return '';
+  if (!TESTER || testerConsent()) return '';
   return `<div class="sesscard tester-welcome" id="tw"><p><b>Welkom in de Proefkeuken!</b><small>Je test een vroege versie van mijn kookapp. Na het starten krijg je <b>3 korte missies</b> die je alles laten zien. Tik op <b>Feedback</b> (rechtsboven) bij alles wat opvalt, onduidelijk is of beter kan.</small></p>
     <div class="field"><label for="tw-name">Hoe heet je? <span class="hint">(zodat Wes weet van wie de feedback is)</span></label><input id="tw-name" value="${esc(testerName())}" placeholder="Voornaam" autocomplete="given-name" maxlength="30"></div>
     <p class="tw-privacy">Je krijgt een persoonlijke test-ID. Wes ziet je voornaam, welke schermen en kookstappen je gebruikt, je sterren, notities en feedback, en foutmeldingen. Geen locatie of contacten. Alles weg? Laat het Wes weten.</p>
@@ -1653,9 +1659,9 @@ function bindTesterWelcome(){
     if (!name) { document.getElementById('tw-name').focus(); toast('Vul eerst je voornaam in'); return; }
     lsSet('kb-tester-name', name);
     if (!lsGet('kb-tester-id', '')) lsSet('kb-tester-id', makeTesterId(name));
-    lsSet('kb-tester-welcomed', true);
+    lsSet('kb-tester-welcomed', true); lsSet('kb-seen-version', APP_V);   // new testers start on this version: no update popup
     track('aanmelding', { screen: 'startpagina' }); obStart();
-    flushEvents(); renderLibrary(); toast(`Welkom ${name}! Je test-ID is ${lsGet('kb-tester-id', '')}`);
+    flushEvents(); registerTester(); if (location.hash) location.hash = ''; else render();   // ('go' is the button here) toast(`Welkom ${name}! Je test-ID is ${lsGet('kb-tester-id', '')}`);
   };
 }
 // removed by Wes in the dashboard? Ask the server (GET, readable answer) and offer a clean restart.
@@ -1665,10 +1671,22 @@ async function checkTesterStatus(){
   try {
     const j = await fetch(`${TESTER.endpoint}?action=status&id=${encodeURIComponent(lsGet('kb-tester-id', ''))}`, { cache:'no-store' }).then(r => r.json());
     if (j.status === 'deleted') showTesterReset();
+    else if (j.status === 'unknown') { lsSet('kb-tester-ok', ''); registerTester(); }   // sign-up never arrived: register again
   } catch(e) { /* offline or endpoint unreachable: try again later */ }
 }
+/* Sign-up with a readable answer (GET, like the status check). The event POST is no-cors, so the app cannot see
+   whether it arrived; this call can, and is repeated until the Sheet confirms the tester ('kb-tester-ok' = id). */
+async function registerTester(){
+  if (!TESTER?.endpoint || !testerConsent() || !navigator.onLine) return;
+  const t = testerInfo(); if (lsGet('kb-tester-ok', '') === t.id) return;
+  const q = new URLSearchParams({ action:'hello', id:t.id, name:t.name, group:t.group, version:APP_VERSION, size:`${innerWidth}×${innerHeight}`, device:navigator.userAgent.slice(0, 160) });
+  try {
+    const j = await fetch(`${TESTER.endpoint}?${q}`, { cache:'no-store' }).then(r => r.json());
+    if (j.status === 'active') lsSet('kb-tester-ok', t.id); else if (j.status === 'deleted') showTesterReset();
+  } catch(e) { /* try again at the next start or status check */ }
+}
 function resetTester(){
-  for (const k of ['kb-tester-id', 'kb-tester-name', 'kb-tester-welcomed', 'kb-ev-queue', 'kb-sess-sent', 'kb-progress', 'kb-stats', 'kb-timers', 'kb-ob']) { try { localStorage.removeItem(k); } catch(e) {} }
+  for (const k of ['kb-tester-id', 'kb-tester-name', 'kb-tester-welcomed', 'kb-tester-ok', 'kb-seen-version', 'kb-ev-queue', 'kb-sess-sent', 'kb-progress', 'kb-stats', 'kb-timers', 'kb-ob']) { try { localStorage.removeItem(k); } catch(e) {} }
   location.hash = ''; location.reload();
 }
 function showTesterReset(){
@@ -1677,11 +1695,9 @@ function showTesterReset(){
     <div class="sheet" role="alertdialog" aria-labelledby="tr-h" style="z-index:71">
       <div class="sheet-head"><div class="grab" aria-hidden="true"></div><div class="sh-row"><h3 id="tr-h">Je testgegevens zijn gewist</h3></div></div>
       <div class="fb-body"><p class="cook-sub" style="margin:0">Wes heeft je gegevens uit de Proefkeuken verwijderd. Wil je weer meedoen? Dan begin je met een schone lei en kies je opnieuw een naam.</p>
-        <button class="btn primary" type="button" id="tr-go">Opnieuw aanmelden</button>
-        <button class="btn ghost" type="button" id="tr-later">Niet nu</button></div></div>`;
+        <button class="btn primary" type="button" id="tr-go">Opnieuw aanmelden</button></div></div>`;
   document.body.appendChild(root);
   root.querySelector('#tr-go').onclick = resetTester;
-  root.querySelector('#tr-later').onclick = () => { lsSet('kb-ev-queue', []); root.remove(); };   // nothing is sent until they sign up again
 }
 if (TESTER) {
   const g = new URLSearchParams(location.search).get('g');
@@ -1693,11 +1709,48 @@ if (TESTER) {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushEvents(); });
   setInterval(flushEvents, 30000);
   setTimeout(() => { track('open'); flushEvents(); }, 1500);
-  setTimeout(checkTesterStatus, 2500);
+  setTimeout(() => { registerTester(); checkTesterStatus(); }, 2500);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkTesterStatus(); });
   const fbBtn = document.getElementById('fb-btn'); if (fbBtn) { fbBtn.hidden = false; fbBtn.onclick = openFeedback; }
   const tb = document.getElementById('test-btn'); if (tb) tb.hidden = true;
   document.documentElement.classList.add('tester');
+}
+/* ---------- test version: sign-up gate, version footer, what's new ----------
+   Gate: in the test version nothing works before the welcome card is accepted (render() shows only the card).
+   What's new: after an update, testers see once what changed (any page, never during cooking).
+   New version: raise APP_VERSION and add an entry at the top of CHANGELOG, written for testers (max. 4 short
+   lines, only what they notice). A version without an entry updates silently. */
+const CHANGELOG = [
+  { v:'v50', date:'15 okt', items:[
+    'Na een update zie je voortaan in zo\'n venster wat er nieuw is.',
+    'Onderaan de startpagina staat welke versie je hebt. Handig als je feedback geeft.',
+    'Nieuwe testers melden zich eerst aan, zodat hun feedback altijd goed aankomt.'
+  ] }
+];
+const vnum = v => parseInt(String(v || '').replace(/\D/g, ''), 10) || 0;
+function verFoot(){ return `<p class="app-ver">${TESTER ? 'Proefkeuken' : 'Cooking by the Book'} ${esc(APP_V)}</p>`; }
+function renderGate(){
+  app.innerHTML = `<div class="wrap gate">${testerWelcome()}${verFoot()}</div>`;
+  bindTesterWelcome();
+}
+function showNews(){
+  if (!TESTER || !testerConsent() || view.cook || document.getElementById('news-root') || document.getElementById('tr-root')) return;
+  const seen = lsGet('kb-seen-version', 'v49');   // testers from before v50 had no marker yet
+  if (vnum(seen) >= vnum(APP_V)) return;
+  const news = CHANGELOG.filter(c => vnum(c.v) > vnum(seen) && vnum(c.v) <= vnum(APP_V)).slice(0, 3);
+  lsSet('kb-seen-version', APP_V);
+  if (!news.length) return;
+  const root = document.createElement('div'); root.id = 'news-root';
+  root.innerHTML = `<div class="sheet-back" id="news-back" style="z-index:70"></div>
+    <div class="sheet news-sheet" role="dialog" aria-labelledby="news-h" style="z-index:71">
+      <div class="sheet-head"><div class="grab" aria-hidden="true"></div><div class="sh-row"><h3 id="news-h">Nieuw in de Proefkeuken</h3><span class="news-v">${esc(APP_V)}</span></div></div>
+      <div class="fb-body">${news.map(c => `<div class="news-block">${news.length > 1 ? `<p class="news-sub">${esc(c.v)} · ${esc(c.date)}</p>` : ''}<ul>${c.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`).join('')}
+        <p class="news-foot">Versie ${esc(APP_V)}${news.length === 1 ? ' · ' + esc(news[0].date) : ''} · zie je iets geks? Tik op Feedback.</p>
+        <button class="btn primary" type="button" id="news-ok">Top, verder</button></div></div>`;
+  document.body.appendChild(root);
+  const close = () => { root.remove(); obTips(); };
+  root.querySelector('#news-ok').onclick = close; root.querySelector('#news-back').onclick = close;
+  track('update_gezien', { v: APP_V, from: seen });
 }
 /* ---------- onboarding: missions, tips and the proefrit ----------
    So a tester gets going from the link alone. All content lives in ONBOARDING; the engine below only plays it.
@@ -2197,7 +2250,7 @@ async function boot(){
     loaded = true;
     if (!resumeChecked) { maybeResume(); if (pendingResume) return; }
     const h = location.hash.slice(1);
-    if (h.startsWith('recept-')) { const r = recipes.find(x=>x.id===h.slice(7)); if (r) return rerender(r); }
+    if (h.startsWith('recept-') && !(TESTER && !testerConsent())) { const r = recipes.find(x=>x.id===h.slice(7)); if (r) { rerender(r); if (TESTER) setTimeout(showNews, 400); return; } }
     if (h==='nieuw' || h.startsWith('bewerk-')) { if (app.querySelector('#form')) return; }
     render();
   }, () => { loaded = true; render(); });

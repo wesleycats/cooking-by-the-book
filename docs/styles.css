@@ -566,6 +566,14 @@ button,.chip,.card{-webkit-tap-highlight-color:transparent}
 .fb-ctx{margin:0;font-size:.78rem;color:var(--muted)}
 .tester-welcome small b{color:var(--fg)}
 .tester-welcome .tw-privacy{margin:0;font-size:.78rem;line-height:1.45;color:var(--muted)}
+.gate{min-height:calc(100dvh - 140px);display:grid;align-content:center;gap:14px;max-width:520px;padding-top:20px;padding-bottom:20px}
+.gated .bar .spacer ~ *{display:none!important}
+.app-ver{margin:28px 0 8px;text-align:center;font-size:.72rem;letter-spacing:.04em;color:var(--muted);opacity:.75}
+.news-sheet .sh-row{align-items:baseline}
+.news-v{margin-left:auto;font:500 .78rem 'DM Mono',monospace;color:var(--muted)}
+.news-block ul{margin:0;padding-left:1.1em;display:grid;gap:8px;line-height:1.45}
+.news-sub{margin:0 0 6px;font-size:.78rem;font-weight:600;color:var(--muted)}
+.news-foot{margin:0;font-size:.76rem;color:var(--muted)}
 .tester-welcome .field input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:1rem}
 .tm-select{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .tm-wipes{display:grid;gap:8px;margin-top:10px}

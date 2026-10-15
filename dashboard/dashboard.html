@@ -201,8 +201,11 @@ select.f{appearance:none;padding-right:26px;background:var(--surface) url('data:
 .item{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:grid;gap:6px}
 .item.bug{border-left:4px solid var(--danger)}
 .item.done{opacity:.6}
-.ih{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.82rem}
-.ih .who{font-weight:700}
+.ih{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;font-size:.82rem;min-width:0}
+.ih>*{flex-shrink:0;white-space:nowrap}
+.ih .who,.ih .shrink{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ih .who{font-weight:700;flex-shrink:1;min-width:3em}
+.ih .shrink{flex-shrink:2}   /* labels geven het eerst ruimte op, de naam pas daarna (min. ±3 letters); soort, tijd en ster blijven heel */
 .ih .when{color:var(--muted);margin-left:auto}
 .msg{font-size:.95rem;white-space:pre-wrap;overflow-wrap:anywhere}
 .where{font-size:.78rem;color:var(--muted)}
@@ -315,7 +318,7 @@ const NEED_API = 3;
 const oldScript = () => !DEMO && data && !(Number(data.api) >= NEED_API);
 /* Versies: DASH_VERSION = dit dashboard (ophogen bij elke wijziging), LATEST_SCRIPT = nieuwste Code.gs in de repo.
    Het script stuurt zijn eigen nummer mee (SCRIPT_VERSION); scripts van vóór s4 hebben dat nog niet. */
-const DASH_VERSION = 'd4', LATEST_SCRIPT = 's4';
+const DASH_VERSION = 'd5', LATEST_SCRIPT = 's5';
 const scriptVer = () => !data ? '' : data.script ? String(data.script) : Number(data.api) >= 3 ? 's3' : 'oud';
 const vnum = v => parseInt(String(v).replace(/\D/g, ''), 10) || 0;
 function renderVersion(){
@@ -332,11 +335,15 @@ async function act(q){
   if (data) data.api = 0;                                   // laat de waarschuwing bovenaan zien
   throw new Error('script verouderd, zie bovenaan');
 }
+// de web-app waar de app (testkit.js) naartoe stuurt; wijkt die af van wat dit dashboard leest, dan komt niets binnen
+let appEndpoint = null;
+const idOf = u => (String(u || '').match(/\/s\/([\w-]+)\/exec/) || [])[1] || '';
 const failed = e => { toast('Niet opgeslagen: ' + (e.message || 'probeer het opnieuw')); setTimeout(load, 300); };   // scherm terug naar wat er echt in de Sheet staat
 async function load(){
   if (loading) return; loading = true; $('reload').classList.add('spin');
   try {
     if (!recipes.length) recipes = await fetch('recipes.json', { cache:'no-store' }).then(r => r.ok ? r.json() : []).then(j => j.recipes || j).catch(() => []);
+    if (appEndpoint === null) appEndpoint = await fetch('testkit.js', { cache:'no-store' }).then(r => r.ok ? r.text() : '').then(t => (t.match(/"endpoint":\s*"([^"]+)"/) || [])[1] || '').catch(() => '');
     if (DEMO) data = demoData();
     else {
       const { key, url } = lsGet();
@@ -427,7 +434,8 @@ function render(){
   $('upd').innerHTML = DEMO ? 'voorbeelddata' : 'bijgewerkt<br>' + fmtTime(data.generated);
   const m = $('main');
   const stale = oldScript() ? '<p class="demo-banner" style="background:var(--danger-soft)"><b>Opslaan werkt nog niet:</b> je Sheet draait een oude versie van het script (' + esc(scriptVer()) + ', nodig: ' + LATEST_SCRIPT + '). Bewaren (★), status, prioriteit en verwijderen worden dan niet opgeslagen. Oplossen: Sheet → Extensies → Apps Script → plak de nieuwste Code.gs → opslaan → voer <b>setup</b> uit → Implementeren → Implementaties beheren → potlood → Versie: <b>Nieuwe versie</b>, Beschrijving: <b>' + LATEST_SCRIPT + '</b> → Implementeren. Daarna dit dashboard vernieuwen.</p>' : '';
-  const banner = stale + (DEMO ? '<p class="demo-banner">Je kijkt naar <b>voorbeelddata</b>. Open het dashboard via de link in je Sheet (tabblad Instellingen) voor je echte testers.</p>' : '');
+  const other = !DEMO && appEndpoint && idOf(appEndpoint) !== idOf(lsGet().url) ? '<p class="demo-banner" style="background:var(--danger-soft)"><b>App en dashboard gebruiken een andere web-app.</b> De app stuurt naar implementatie <b>…' + esc(idOf(appEndpoint).slice(-8)) + '</b>, dit dashboard leest <b>…' + esc(idOf(lsGet().url).slice(-8)) + '</b>. Nieuwe testers en feedback komen dan niet hier binnen. Oplossen: gebruik bij een nieuwe versie altijd Implementaties beheren → potlood (dan blijft de URL gelijk), of stuur Claude de nieuwe /exec-URL.</p>' : '';
+  const banner = stale + other + (DEMO ? '<p class="demo-banner">Je kijkt naar <b>voorbeelddata</b>. Open het dashboard via de link in je Sheet (tabblad Instellingen) voor je echte testers.</p>' : '');
   m.innerHTML = banner + ({ overzicht, testers: testersPane, recepten, feedback: feedbackPane, uitnodigen }[tab] || overzicht)(d);
   document.body.classList.toggle('selecting', tab === 'testers' && !!view.sel && view.sel.size > 0);
   bind(d);
@@ -595,7 +603,7 @@ const TYPE_IC = { 'Werkt niet': '🐞', 'Fout': '⚠', 'Snap ik niet': '?', 'Ide
 function itemHtml(i, g){
   const r = recipes.find(x => x.id === i.rid), open = isOpen(i), p = prioOf(i), ref = esc(i.tab) + '|' + esc(i.id), k = i.kept;
   return `<article class="item ${open ? p.toLowerCase() : 'dim'}" id="it-${esc(i.id)}">
-    <div class="ih"><span class="chip ${i.bug ? 'bad' : i.type === 'Mooi' ? 'ok' : i.type === 'Snap ik niet' ? 'warn' : ''}">${TYPE_IC[i.type] || ''} ${esc(i.type)}</span><span class="who">${esc(i.name)}</span>${i.orphan ? '<span class="chip">tester verwijderd</span>' : ''}${i.declinedBefore ? '<span class="chip warn">eerder besloten: niet doen</span>' : ''}${g && g.items.length > 1 ? `<span class="dup">×${g.items.length} · ${g.testers.size} ${g.testers.size === 1 ? 'tester' : 'testers'}</span>` : ''}<span class="when" title="${esc(new Date(i.at).toLocaleString('nl-NL'))}">${ago(i.at)}</span><button class="star" type="button" data-keep="${ref}" aria-pressed="${!!k}" aria-label="${k ? 'Niet meer bewaren' : 'Bewaren'}" title="${k ? 'Bewaard' : 'Bewaren'}">${k ? '★' : '☆'}</button></div>
+    <div class="ih"><span class="chip ${i.bug ? 'bad' : i.type === 'Mooi' ? 'ok' : i.type === 'Snap ik niet' ? 'warn' : ''}">${TYPE_IC[i.type] || ''} ${esc(i.type)}</span><span class="who">${esc(i.name)}</span>${i.orphan ? '<span class="chip shrink" title="Tester verwijderd">verwijderd</span>' : ''}${i.declinedBefore ? '<span class="chip warn shrink" title="Eerder besloten: niet doen">eerder: niet doen</span>' : ''}${g && g.items.length > 1 ? `<span class="dup shrink">×${g.items.length} · ${g.testers.size} ${g.testers.size === 1 ? 'tester' : 'testers'}</span>` : ''}<span class="when" title="${esc(new Date(i.at).toLocaleString('nl-NL'))}">${ago(i.at).replace(' geleden', '')}</span><button class="star" type="button" data-keep="${ref}" aria-pressed="${!!k}" aria-label="${k ? 'Niet meer bewaren' : 'Bewaren'}" title="${k ? 'Bewaard' : 'Bewaren'}">${k ? '★' : '☆'}</button></div>
     <div class="msg">${esc(i.message)}</div>
     <div class="where">${esc(i.screen || '')}${r ? ' · ' + esc(short(r.title)) : ''}${i.source ? ' · ' + esc(i.source) : ''}</div>
     ${g && g.items.length > 1 ? `<details class="more"><summary>Ook gemeld door ${esc([...new Set(g.items.slice(1).map(x => x.name))].join(', '))}</summary><ul>${g.items.slice(1).map(x => `<li>${esc(x.message)} <span class="muted">— ${esc(x.name)}, ${ago(x.at)}</span></li>`).join('')}</ul></details>` : ''}
@@ -603,7 +611,7 @@ function itemHtml(i, g){
     <div class="ia"><span class="prio ${i.prio ? '' : 'auto'}" role="group" aria-label="Prioriteit">${['P1', 'P2', 'P3'].map(x => `<button type="button" data-p="${x}" data-setprio="${ref}|${x}" aria-pressed="${p === x}">${x}</button>`).join('')}</span>
       <select class="st" data-setstatus="${ref}" aria-label="Status">${STATUS.map(([k, l]) => `<option value="${k}" ${(i.status || 'nieuw') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
       ${i.prio ? '' : '<span class="hint">voorstel</span>'}</div>
-    ${k ? `<input class="knote" data-note="${esc(k.bid)}" value="${esc(k.note || '')}" placeholder="Notitie bij deze bewaarde melding (bv. fixen in v48)" maxlength="500" aria-label="Notitie">` : ''}
+    ${k ? `<input class="knote" data-note="${esc(k.bid)}" value="${esc(k.note || '')}" placeholder="Notitie (bv. fixen in v51)" maxlength="500" aria-label="Notitie">` : ''}
   </article>`;
 }
 const FF = [['open', 'Open'], ['gepland', 'Gepland'], ['bewaard', '★ Bewaard'], ['niet doen', 'Niet doen'], ['opgelost', 'Opgelost'], ['alles', 'Alles'], ['Werkt niet', '🐞 Werkt niet'], ['Fout', '⚠ Fouten'], ['Snap ik niet', '? Snap ik niet'], ['Idee', '💡 Idee'], ['Mooi', '♥ Mooi']];

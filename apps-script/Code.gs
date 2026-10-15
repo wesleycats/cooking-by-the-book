@@ -23,7 +23,7 @@ const TZ = 'Europe/Amsterdam';
 // versie van de dashboard-API: het dashboard waarschuwt als het script ouder is dan het verwacht (nieuwe versie niet geïmplementeerd)
 const API_VERSION = 3;
 // versie van deze code; ophogen bij elke wijziging. Zet hetzelfde nummer bij Implementaties beheren → Nieuwe versie → Beschrijving.
-const SCRIPT_VERSION = 's4';
+const SCRIPT_VERSION = 's5';
 const NOTIFY = { errors: true, feedback: true, newTester: true };
 // ntfy.sh (gratis) telt per IP: 250 berichten/dag, 60 achter elkaar. Apps Script deelt IP's met andere scripts, dus
 // alles wordt gebundeld: urgent (fout, "Werkt niet") en overig elk in een eigen bundel, die pas vertrekt als de oudste
@@ -286,6 +286,7 @@ function doGet(e) {
     const f = SpreadsheetApp.getActive().getSheetByName('Testers').getRange('A:A').createTextFinder(id).matchEntireCell(true).findNext();
     return json_({ status: f ? 'active' : 'unknown' });
   }
+  if (p.action === 'hello') return json_(hello_(p));   // aanmelding met leesbaar antwoord (ook zonder sleutel)
   if (!p.key || p.key !== PropertiesService.getScriptProperties().getProperty('DASHBOARD_KEY')) return json_({ error: 'Ongeldige sleutel' });
   const ss = SpreadsheetApp.getActive();
   if (p.action === 'mark') return json_(mark_(ss, p));
@@ -297,6 +298,21 @@ function doGet(e) {
   const out = { generated: new Date().toISOString(), api: API_VERSION, script: SCRIPT_VERSION };
   for (const [name, cols] of Object.entries(TABS)) out[name.toLowerCase()] = rows_(ss, name, cols, name === 'Events' ? 8000 : 2000);
   return json_(out);
+}
+
+/** Aanmelden vanuit de app (GET, de app leest het antwoord). Zet alleen de tester in Testers, verder niets.
+    De app herhaalt dit tot het lukt, en opnieuw als de statuscheck 'unknown' geeft (aanmelding nooit aangekomen). */
+function hello_(p) {
+  const id = String(p.id || '');
+  if (!/^[A-Z0-9]{1,8}-[A-Z0-9]{4}$/.test(id)) return { status: 'unknown' };
+  if (tombstones_()[id]) return { status: 'deleted' };
+  const name = String(p.name || '').slice(0, 30), group = String(p.group || '').slice(0, 30);
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const isNew = upsertTester_(SpreadsheetApp.getActive(), id, name, group, { device: String(p.device || '').slice(0, 160), size: String(p.size || '').slice(0, 20), version: String(p.version || '').slice(0, 40) }, []);
+    if (isNew && NOTIFY.newTester) dispatch_([['👋 Nieuwe tester: ' + name, (group ? 'Groep: ' + group + ' · ' : '') + 'ID ' + id, 3, ['wave']]]);
+    return { status: 'active', isNew, script: SCRIPT_VERSION };
+  } finally { lock.releaseLock(); }
 }
 
 /* ---------- status, prioriteit en bewaren (dashboard) ----------

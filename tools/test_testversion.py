@@ -23,9 +23,10 @@ async def main():
         ctx = await b.new_context(viewport={'width': 390, 'height': 844}, color_scheme='dark')
         pg = await ctx.new_page(); errs = []; posts = []
         pg.on('pageerror', lambda e: errs.append(str(e)))
-        server = {'status': 'active'}
+        server = {'status': 'active'}; hellos = []
         async def grab(route):
-            if route.request.method == 'GET' and 'action=status' in route.request.url:
+            if route.request.method == 'GET' and ('action=status' in route.request.url or 'action=hello' in route.request.url):
+                if 'action=hello' in route.request.url: hellos.append(route.request.url)
                 await route.fulfill(status=200, body=json.dumps({'status': server['status']}), headers={'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'}); return
             try: posts.append(json.loads(route.request.post_data or '{}'))
             except Exception: posts.append({})
@@ -37,12 +38,18 @@ async def main():
         ok('niets verstuurd vóór akkoord', not posts, posts[:1])
         ok('welkomstkaart met privacytekst', await pg.locator('#tw').count() == 1 and await pg.locator('.tw-privacy').count() == 1)
         await pg.screenshot(path=os.path.join(SHOTS, 'welcome.png'))
+        ok('poort: vóór aanmelden geen recepten, feedback of keuken', await pg.locator('.card').count() == 0 and not await pg.locator('#fb-btn').is_visible() and not await pg.locator('#stats-btn').is_visible())
+        await pg.goto(BASE + '/index.html?g=vrienden#recept-koreaanse-kip-gehaktbowl'); await pg.wait_for_timeout(1500)
+        ok('poort: ook via een receptlink eerst aanmelden', await pg.locator('#tw').count() == 1 and await pg.locator('#cook').count() == 0)
+        ok('poort: versienummer zichtbaar', 'Proefkeuken v' in await pg.inner_text('.app-ver'))
         await pg.click('#tw-go'); await pg.wait_for_timeout(300)
         ok('zonder naam niet starten', await pg.locator('#tw').count() == 1)
         await pg.fill('#tw-name', 'Sanne'); await pg.click('#tw-go'); await pg.wait_for_timeout(1200)
         tid = await pg.evaluate("JSON.parse(localStorage.getItem('kb-tester-id'))")
         ok('test-ID gemaakt', bool(re.match(r'^SANNE-[A-Z0-9]{4}$', tid or '')), tid)
         ok('aanmelding verstuurd met naam, ID en groep', any(p_.get('tester') == {'id': tid, 'name': 'Sanne', 'group': 'vrienden'} for p_ in posts) and any(i['kind'] == 'aanmelding' for i in items()), posts[-1:] )
+        ok('aanmelding bevestigd via hello (leesbaar antwoord)', any(tid in u and 'name=Sanne' in u for u in hellos) and await pg.evaluate("JSON.parse(localStorage.getItem('kb-tester-ok'))") == tid, hellos[-1:])
+        ok('na aanmelden: recepten en versie onderaan, geen update-pop-up', await pg.locator('.card').count() > 0 and await pg.locator('.app-ver').count() == 1 and await pg.locator('#news-root').count() == 0)
         ok('eerdere "open" gaat na akkoord alsnog mee', any(i['kind'] == 'open' for i in items()))
         ok('testmenu en nieuw recept verborgen', not await pg.locator('#test-btn').is_visible() and not await pg.locator('#new-btn').is_visible())
         await pg.click('.card'); await pg.wait_for_timeout(500)
@@ -80,6 +87,18 @@ async def main():
         ok('wachtrij leeg', await pg.evaluate("JSON.parse(localStorage.getItem('kb-ev-queue')||'[]').length") == 0)
         await pg.reload(); await pg.wait_for_timeout(1000)
         ok('welkom niet opnieuw na herladen', await pg.locator('#tw').count() == 0)
+        n0 = len(hellos); ok('bevestigd: geen nieuwe hello bij herladen', n0 == len(hellos))
+        # tester van vóór v50 (geen versiemarker): eenmalig "wat is nieuw"
+        await pg.evaluate("localStorage.removeItem('kb-seen-version')"); await pg.reload(); await pg.wait_for_timeout(1500)
+        ok('update: pop-up met versienummer', await pg.locator('#news-root').count() == 1 and 'v50' in await pg.inner_text('#news-root'), await pg.evaluate("[location.hash, localStorage.getItem('kb-seen-version'), !!document.querySelector('.cook'), document.body.innerText.slice(0,200)]"))
+        await pg.screenshot(path=os.path.join(SHOTS, 'news.png'))
+        await pg.click('#news-ok'); await pg.reload(); await pg.wait_for_timeout(1500)
+        ok('update: pop-up maar één keer', await pg.locator('#news-root').count() == 0)
+        ok('update: gemeten (update_gezien)', any(i['kind'] == 'update_gezien' for i in items() + await pg.evaluate("JSON.parse(localStorage.getItem('kb-ev-queue')||'[]')")))
+        # aanmelding nooit aangekomen: de statuscheck zegt 'unknown' → app meldt zich opnieuw aan
+        server['status'] = 'unknown'; n0 = len(hellos); await pg.reload(); await pg.wait_for_timeout(3500)
+        ok('server kent tester niet: app meldt zich opnieuw aan', len(hellos) > n0, len(hellos) - n0)
+        server['status'] = 'active'
         ok('ID blijft na herladen', await pg.evaluate("JSON.parse(localStorage.getItem('kb-tester-id'))") == tid)
         ok('app: geen JS-fouten (buiten de bewuste testfout)', not [e for e in errs if 'testfout' not in e], errs[:3])
         # offline: wachtrij houdt vast
@@ -95,7 +114,7 @@ async def main():
         ok('actieve tester: geen pop-up', await pg.locator('#tr-root').count() == 0)
         server['status'] = 'deleted'
         await pg.goto(BASE + '/index.html'); await pg.wait_for_timeout(3200)
-        ok('verwijderde tester: pop-up "opnieuw aanmelden"', await pg.locator('#tr-root #tr-go').count() == 1)
+        ok('verwijderde tester: pop-up "opnieuw aanmelden", zonder "Niet nu"', await pg.locator('#tr-root #tr-go').count() == 1 and await pg.locator('#tr-later').count() == 0)
         await pg.screenshot(path=os.path.join(SHOTS, 'reset-popup.png'))
         await pg.click('#tr-go'); await pg.wait_for_timeout(1500)
         ok('na opnieuw aanmelden: schone lei met welkomstkaart', await pg.locator('#tw').count() == 1 and await pg.evaluate("localStorage.getItem('kb-tester-id') === null && localStorage.getItem('kb-stats') === null"))
@@ -234,9 +253,9 @@ async def main():
             ok(f'[{theme}] dashboard: prioriteit aanpassen', await pg.evaluate("[...document.querySelectorAll('.item')].some(i => i.querySelector('[data-p=\\'P3\\'][aria-pressed=true]') && !i.querySelector('.prio.auto'))"))
             await pg.locator('.item:not(:has(.dup))').first.locator('select.st').select_option('opgelost'); await pg.wait_for_timeout(200)
             ok(f'[{theme}] dashboard: status opgelost haalt item uit "Open"', await pg.locator('.item').count() < n_open)
-            ok(f'[{theme}] dashboard: hint "eerder besloten: niet doen"', 'eerder besloten: niet doen' in await pg.inner_text('main'))
+            ok(f'[{theme}] dashboard: hint "eerder besloten: niet doen"', 'eerder: niet doen' in await pg.inner_text('main'))
             await pg.click('[data-ff="bewaard"]'); await pg.wait_for_timeout(150)
-            ok(f'[{theme}] dashboard: filter Bewaard toont ook meldingen van verwijderde testers', 'tester verwijderd' in await pg.inner_text('main') and await pg.locator('.knote').count() >= 2)
+            ok(f'[{theme}] dashboard: filter Bewaard toont ook meldingen van verwijderde testers', 'verwijderd' in await pg.inner_text('main') and await pg.locator('.knote').count() >= 2)
             await pg.locator('.knote').first.fill('fixen in v48'); await pg.locator('.knote').first.dispatch_event('change'); await pg.wait_for_timeout(150)
             ok(f'[{theme}] dashboard: notitie bij bewaarde melding', await pg.locator('.knote').first.input_value() == 'fixen in v48')
             await pg.screenshot(path=os.path.join(SHOTS, f'{theme}-dash-bewaard.png'), full_page=True)
@@ -252,6 +271,11 @@ async def main():
             ok(f'[{theme}] dashboard: sorteren op nieuwste', await pg.locator('[data-sort="new"][aria-pressed="true"]').count() == 1)
             await pg.click('[data-sort="prio"]')
             await pg.screenshot(path=os.path.join(SHOTS, f'{theme}-dash-feedback.png'), full_page=True)
+            await pg.set_viewport_size({'width': 360, 'height': 800})
+            await pg.evaluate("document.querySelectorAll('.item .who').forEach(w => w.textContent = 'Tester met een lange naam')")
+            bad = await pg.evaluate("[...document.querySelectorAll('.ih')].filter(h => { const t = [...h.children].map(c => Math.round(c.getBoundingClientRect().top + c.getBoundingClientRect().height / 2)); return !(Math.max(...t) - Math.min(...t) <= 4 && h.scrollWidth <= h.clientWidth + 1); }).map(h => h.innerText + ' | ' + h.scrollWidth + '/' + h.clientWidth)")
+            ok(f'[{theme}] dashboard: kop van elke melding op één regel (ook smal, lange naam)', not bad and await pg.locator('.ih').count() > 0, bad[:2])
+            await pg.set_viewport_size({'width': 390, 'height': 844})
             await pg.click('[data-tab="uitnodigen"]'); await pg.wait_for_timeout(200)
             await pg.fill('#grp', 'familie'); await pg.wait_for_timeout(100)
             ok(f'[{theme}] dashboard: uitnodigingslink per groep + QR', '?g=familie' in await pg.inner_text('#inv-url') and await pg.locator('#qr svg').count() == 1)
@@ -277,6 +301,10 @@ async def main():
         await pg.click('[data-tab="feedback"]'); await pg.wait_for_timeout(200)
         await pg.locator('.item').first.locator('[data-p="P2"]').click(); await pg.wait_for_timeout(500)
         ok('dashboard: ook opslaan gaat via de reserve-methode', await jsonp('action=mark'))
+        ok('dashboard: zelfde web-app als de app → geen waarschuwing', 'andere web-app' not in await pg.inner_text('#main'))
+        await pg.goto(BASE + '/dashboard.html#k=KEY&u=' + urllib.parse.quote('https://script.google.com/macros/s/ANDERE/exec', safe='')); await pg.reload(); await pg.wait_for_timeout(3000)
+        ok('dashboard: andere web-app dan de app → rode waarschuwing', 'andere web-app' in await pg.inner_text('#main'))
+        await pg.goto(BASE + '/dashboard.html#k=KEY&u=' + urllib.parse.quote('https://script.google.com/macros/s/TEST/exec', safe='')); await pg.reload(); await pg.wait_for_timeout(1500)
         ok('dashboard (echte koppeling): geen JS-fouten', not errs, errs[:2])
         await ctx.close()
         # ---------- verouderd script (nieuwe versie niet geïmplementeerd): kent bewaren/verwijderen niet en stuurt gewoon data terug ----------
@@ -298,12 +326,12 @@ async def main():
                   await route.fulfill(status=200, body=json.dumps(body), headers={'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'})
               return gas2
             await ctx.route('https://script.google.com/**', mk(stale, store))
-            await pg.goto(BASE + '/dashboard.html#k=KEY&u=' + urllib.parse.quote('https://script.google.com/macros/s/TEST/exec', safe='')); await pg.wait_for_timeout(1500)
+            await pg.goto(BASE + '/dashboard.html#k=KEY&u=' + urllib.parse.quote('https://script.google.com/macros/s/TEST/exec', safe='')); await pg.reload(); await pg.wait_for_timeout(1500)
             warn = lambda: pg.locator('text=Opslaan werkt nog niet').count()
             tag = 'oud script' if stale else 'nieuw script'
             ok(f'dashboard ({tag}): waarschuwing bovenaan ' + ('zichtbaar' if stale else 'afwezig'), (await warn() > 0) == stale)
             ver = await pg.inner_text('#ver')
-            ok(f'dashboard ({tag}): versie bovenin', ver.startswith('Dashboard d') and (('Script oud' in ver) if stale else ('Script s3 → s4' in ver)), ver)
+            ok(f'dashboard ({tag}): versie bovenin', ver.startswith('Dashboard d') and (('Script oud' in ver) if stale else ('Script s3 → s5' in ver)), ver)
             await pg.click('[data-tab="feedback"]'); await pg.wait_for_timeout(200)
             await pg.locator('.item').first.locator('.star').click(); await pg.wait_for_timeout(300)
             t = await pg.inner_text('#toast')

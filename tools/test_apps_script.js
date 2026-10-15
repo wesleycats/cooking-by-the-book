@@ -192,4 +192,19 @@ post({ tester: T, items: [{ kind: 'feedback', at: now(), type: 'Idee', message: 
 const srcId = sheets.Feedback.rows.slice(1).find(r => r[5] === 'notitie via bron')[0];
 get({ key: K, action: 'keep', tab: 'Feedback', id: srcId });
 assert(get({ key: K, action: 'mark', tab: 'Bewaard', id: srcId, note: 'via bron' }).ok && sheets.Bewaard.rows.some(r => r[1] === srcId && r[13] === 'via bron'), 'notitie lukt ook met de bron-ID (ster net gezet)');
+
+// ---------- aanmelden met leesbaar antwoord (15 okt, s5) ----------
+const H = { id: 'HALLO-K2M4', name: 'Hallo', group: 'vrienden' };
+assert(get({ action: 'status', id: H.id }).status === 'unknown', 'hello: tester eerst onbekend');
+const h1 = get({ action: 'hello', ...H, version: 'v50' });
+assert(h1.status === 'active' && h1.isNew && count('Testers', H.id) === 1, 'hello: tester staat in Testers (zonder sleutel)');
+assert(get({ action: 'hello', ...H }).isNew === false && count('Testers', H.id) === 1, 'hello: twee keer = nog steeds één rij');
+post({ tester: H, items: [{ kind: 'open', at: now() }] });
+assert(count('Testers', H.id) === 1, 'hello + events: geen dubbele rij');
+assert(get({ action: 'hello', id: 'fout' }).status === 'unknown' && !sheets.Testers.rows.some(r => r[0] === 'fout'), 'hello: ongeldige ID wordt genegeerd');
+get({ key: K, action: 'delete', ids: H.id, scope: 'all' });
+assert(get({ action: 'hello', ...H }).status === 'deleted' && count('Testers', H.id) === 0, 'hello: verwijderde tester komt niet terug');
+const H2 = { id: 'HALLO-P7Q9', name: 'Hallo', group: 'vrienden' };
+assert(get({ action: 'hello', ...H2 }).status === 'active' && count('Testers', H2.id) === 1, 'opnieuw aangemeld met nieuwe ID: staat er weer in');
+assert(get({ key: K }).script === 's5', 'scriptversie s5');
 console.log(fails ? fails + ' FOUT' : 'ALLES OK'); process.exit(fails ? 1 : 0);
