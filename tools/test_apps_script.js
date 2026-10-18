@@ -78,7 +78,7 @@ assert(notes.length === 0 && JSON.parse(props.Q_REST).length === 1, 'nieuwe test
 // ---------- urgent per uur, overig per 6 uur ----------
 post({ tester: T, items: [
   { kind: 'feedback', at: now(), type: 'Werkt niet', message: 'Timer piept niet', screen: 's', context: 'c' },
-  { kind: 'fout', at: now(), message: 'boem', source: 'app.js:1:1' }, { kind: 'fout', at: now(), message: 'boem', source: 'app.js:1:1' },
+  { kind: 'fout', at: now(), message: 'boem', source: 'app.js:1:1' }, { kind: 'fout', at: new Date(Date.now() + 5000).toISOString(), message: 'boem', source: 'app.js:1:1' },
   { kind: 'feedback', at: now(), type: 'Snap ik niet', message: 'waar is de pasta?' },
   { kind: 'sessie', at: now(), sid: 's1', rid: 'r1', title: 'Pasta', rating: 3, chips: ['Te zout'], adj: { 0: 30 } }] });
 assert(sheets.Feedback.rows.length === 3 && sheets.Fouten.rows.length === 3, 'feedback en fouten opgeslagen');
@@ -206,5 +206,45 @@ get({ key: K, action: 'delete', ids: H.id, scope: 'all' });
 assert(get({ action: 'hello', ...H }).status === 'deleted' && count('Testers', H.id) === 0, 'hello: verwijderde tester komt niet terug');
 const H2 = { id: 'HALLO-P7Q9', name: 'Hallo', group: 'vrienden' };
 assert(get({ action: 'hello', ...H2 }).status === 'active' && count('Testers', H2.id) === 1, 'opnieuw aangemeld met nieuwe ID: staat er weer in');
-assert(get({ key: K }).script === 's5', 'scriptversie s5');
+
+// ---------- s6: dubbele meldingen (PK-3) en lege meldingen (PK-6) ----------
+const D = { id: 'DUBBEL-AB12', name: 'Dubbel', group: 'vrienden' };
+const fbCount = msg => sheets.Feedback.rows.slice(1).filter(r => r[5] === msg).length;
+const at1 = now();
+post({ tester: D, items: [{ kind: 'feedback', eid: 'e1', at: at1, type: 'Idee', message: 'met eid' }] });
+post({ tester: D, items: [{ kind: 'feedback', eid: 'e1', at: at1, type: 'Idee', message: 'met eid' }] });
+assert(fbCount('met eid') === 1, 'PK-3: zelfde eid twee keer verstuurd = één melding');
+post({ tester: D, items: [{ kind: 'feedback', eid: 'e2', at: at1, type: 'Idee', message: 'zelfde batch' }, { kind: 'feedback', eid: 'e2', at: at1, type: 'Idee', message: 'zelfde batch' }] });
+assert(fbCount('zelfde batch') === 1, 'PK-3: dubbel binnen één batch = één melding');
+const at2 = now();
+post({ tester: D, items: [{ kind: 'feedback', at: at2, type: 'Idee', message: 'oude app' }] });
+post({ tester: D, items: [{ kind: 'feedback', at: at2, type: 'Idee', message: 'oude app' }] });
+assert(fbCount('oude app') === 1, 'PK-3: oude app zonder eid, zelfde tijd en bericht = één melding');
+for (const k in cache) delete cache[k];   // cache leeg (Google ruimt die soms op): de Sheet vangt het
+post({ tester: D, items: [{ kind: 'feedback', eid: 'e1', at: at1, type: 'Idee', message: 'met eid' }] });
+assert(fbCount('met eid') === 1, 'PK-3: ook met lege cache geen dubbele (controle in de Sheet)');
+post({ tester: D, items: [{ kind: 'feedback', eid: 'e3', at: new Date(Date.now() + 60000).toISOString(), type: 'Idee', message: 'met eid' }] });
+assert(fbCount('met eid') === 2, 'PK-3: zelfde tekst later opnieuw gestuurd = wél een nieuwe melding');
+const ev0 = sheets.Events.rows.length, ate = now();
+post({ tester: D, items: [{ kind: 'stap', eid: 'e4', at: ate, rid: 'r1', i: 2 }] }); post({ tester: D, items: [{ kind: 'stap', eid: 'e4', at: ate, rid: 'r1', i: 2 }] });
+assert(sheets.Events.rows.length === ev0 + 1, 'PK-3: gewone events ook ontdubbeld');
+post({ tester: D, items: [{ kind: 'sessie', eid: 'e5', at: now(), sid: 'sx', rid: 'r1', title: 'Pasta', rating: 2 }, { kind: 'sessie', eid: 'e5', at: now(), sid: 'sx', rid: 'r1', title: 'Pasta', rating: 4 }] });
+assert(sheets.Sessies.rows.filter(r => r[0] === 'sx').length === 1 && sheets.Sessies.rows.find(r => r[0] === 'sx')[9] === 4, 'sessies blijven bijwerken (geen ontdubbeling nodig)');
+const fb0 = sheets.Feedback.rows.length, ev1 = sheets.Events.rows.length;
+assert(post({ tester: D, items: [{}, null, { at: now() }, { kind: 'feedback', at: now(), type: '', message: '  ' }] }) === 'ok', 'PK-6: batch met lege items geeft geen fout');
+assert(sheets.Feedback.rows.length === fb0 && sheets.Events.rows.length === ev1, 'PK-6: lege items en lege melding worden niet opgeslagen');
+sheets.Feedback.rows.splice(1, 0, ['', '', '', '', '', '', '', '', '', '', '']);
+assert(!get({ key: K }).feedback.some(f => !f.fid && !f.at && !f.message), 'PK-6: lege rij in de Sheet komt niet in het dashboard');
+// opschonen: oude dubbelen (van vóór s6) en lege rijen
+const oud = new Date('2026-10-16T11:48:31Z');
+for (let k = 0; k < 3; k++) sheets.Feedback.rows.splice(2, 0, ['f' + k + 'xxxxxx', oud, D.id, 'Dubbel', 'Idee', 'Korte vragenlijst', 'start', '', '', 'nieuw', '']);
+sheets.Fouten.rows.splice(1, 0, ['', '', '', '', '', '', '', '', '', '', '', '', '']);
+const tr0 = (sheets.Prullenbak?.rows.length || 1);
+const op = ctx.meldingenOpschonen();
+assert(sheets.Feedback.rows.slice(1).filter(r => r[5] === 'Korte vragenlijst').length === 1 && op.uit.Feedback.dubbel === 2 && op.uit.Feedback.leeg === 1, 'opschonen: 3× dezelfde melding wordt 1×, lege rij weg');
+assert(op.uit.Fouten && op.uit.Fouten.leeg === 1 && !sheets.Fouten.rows.slice(1).some(r => r.every(v => v === '')), 'opschonen: lege rij in Fouten weg');
+assert(sheets.Prullenbak.rows.length === tr0 + 2, 'opschonen: dubbelen staan in de Prullenbak');
+assert(fbCount('met eid') === 2 && fbCount('oude app') === 1, 'opschonen: echte meldingen blijven staan');
+assert(!ctx.meldingenOpschonen().batch, 'opschonen nog eens: niets meer te doen');
+assert(get({ key: K }).script === 's6' && get({ key: K }).api === 3, 'scriptversie s6, API blijft 3 (dashboard hoeft niet mee)');
 console.log(fails ? fails + ' FOUT' : 'ALLES OK'); process.exit(fails ? 1 : 0);

@@ -23,7 +23,7 @@ const TZ = 'Europe/Amsterdam';
 // versie van de dashboard-API: het dashboard waarschuwt als het script ouder is dan het verwacht (nieuwe versie niet geïmplementeerd)
 const API_VERSION = 3;
 // versie van deze code; ophogen bij elke wijziging. Zet hetzelfde nummer bij Implementaties beheren → Nieuwe versie → Beschrijving.
-const SCRIPT_VERSION = 's5';
+const SCRIPT_VERSION = 's6';
 const NOTIFY = { errors: true, feedback: true, newTester: true };
 // ntfy.sh (gratis) telt per IP: 250 berichten/dag, 60 achter elkaar. Apps Script deelt IP's met andere scripts, dus
 // alles wordt gebundeld: urgent (fout, "Werkt niet") en overig elk in een eigen bundel, die pas vertrekt als de oudste
@@ -122,9 +122,12 @@ function doPost(e) {
     const isNew = upsertTester_(ss, t.id, name, group, body, items);
     const events = [], feedback = [], errors = [], alerts = [];
     for (const it of items) {
+      if (!it || typeof it !== 'object' || !it.kind) continue;                       // PK-6 (s6): leeg event = niets opslaan
+      if (it.kind !== 'sessie' && seen_(t.id, it, ss)) continue;                     // PK-3 (s6): dubbel verstuurd = één keer opslaan
       const at = parseDate_(it.at), rid = String(it.rid || '').slice(0, 80), screen = String(it.screen || '').slice(0, 120);
       if (it.kind === 'sessie') { upsertSession_(ss, t.id, name, it); continue; }
       if (it.kind === 'feedback') {
+        if (!String(it.message || '').trim() && !String(it.type || '').trim()) continue;   // PK-6 (s6): lege melding weigeren
         feedback.push([shortId_(), at, t.id, name, String(it.type || ''), String(it.message || '').slice(0, 2000), screen, rid, String(it.context || '').slice(0, 1500), 'nieuw', '']);
         if (NOTIFY.feedback) { const [pr, tag, ic] = FB_PRIO[it.type] || [3, 'speech_balloon', '💬'];
           alerts.push([ic + ' ' + name + ': ' + String(it.type || 'feedback').toLowerCase(), String(it.message || '').slice(0, 300) + '\n' + screen, pr, [tag]]); }
@@ -273,6 +276,56 @@ function dashboardUrl_() {
 function firstTime_(key, seconds) {
   const cache = CacheService.getScriptCache(), k = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, key)).slice(0, 40);
   if (cache.get(k)) return false; cache.put(k, '1', seconds); return true;
+}
+
+/* ---------- dubbele en lege meldingen (s6: PK-3, PK-6) ----------
+   De app (v51+) geeft elk event een uniek eid. Een event dat al eens binnenkwam (bv. een herhaalde POST omdat de app
+   het antwoord niet kan lezen) wordt overgeslagen. Oudere apps zonder eid: sleutel = tester + soort + tijd (+ bericht).
+   Eerst de cache (6 uur); voor feedback en fouten daarna ook de bovenste 100 rijen van het tabblad, voor als de cache leeg is. */
+function eventKey_(tid, it) {
+  if (it.eid) return 'eid:' + tid + ':' + String(it.eid).slice(0, 60);
+  return 'ev:' + tid + ':' + it.kind + ':' + String(it.at || '') + ':' + (it.rid || '') + ':' + (it.i ?? '') + ':' + String(it.type || '') + ':' + String(it.message || '').slice(0, 200);
+}
+function seen_(tid, it, ss) {
+  if (!firstTime_(eventKey_(tid, it), 21600)) return true;
+  if (it.kind !== 'feedback' && it.kind !== 'fout') return false;
+  const tab = it.kind === 'feedback' ? 'Feedback' : 'Fouten', sh = ss.getSheetByName(tab); if (!sh || sh.getLastRow() < 2) return false;
+  const cols = TABS[tab].map(c => c[0]), n = Math.min(100, sh.getLastRow() - 1), rows = sh.getRange(2, 1, n, cols.length).getValues();
+  const at = parseDate_(it.at).getTime(), msg = String(it.message || '').slice(0, tab === 'Feedback' ? 2000 : 300), ty = String(it.type || '');
+  return rows.some(r => String(r[cols.indexOf('tid')]) === tid && String(r[cols.indexOf('message')]) === msg && (tab === 'Fouten' || String(r[cols.indexOf('type')]) === ty)
+    && Math.abs(new Date(r[cols.indexOf('at')]).getTime() - at) < 1000);
+}
+function leeg_(row) { return row.every(v => v === '' || v === null || v === undefined); }
+/** Eenmalig na het implementeren van s6 (kies `meldingenOpschonen` → Uitvoeren): haalt dubbele meldingen (zelfde tester,
+    soort, bericht en seconde) en lege rijen weg uit Feedback, Fouten, Events, Sessies en Testers. Dubbelen gaan naar de
+    Prullenbak (30 dagen terug te zetten via het logboek-batchnummer); lege rijen worden gewoon verwijderd. */
+function meldingenOpschonen() {
+  const ss = SpreadsheetApp.getActive(), lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const batch = shortId_(), now = new Date(), trash = [], uit = {};
+    for (const tab of ['Feedback', 'Fouten', 'Events', 'Sessies', 'Testers']) {
+      const sh = ss.getSheetByName(tab), last = sh ? sh.getLastRow() : 0; if (last < 2) continue;
+      const cols = TABS[tab].map(c => c[0]), w = cols.length, vals = sh.getRange(2, 1, last - 1, w).getValues(), keep = [], seen = new Set();
+      let dubbel = 0, leeg = 0;
+      for (const r of vals) {
+        if (leeg_(r)) { leeg++; continue; }
+        if (tab === 'Feedback' || tab === 'Fouten') {
+          const t = r[cols.indexOf('at')], sec = t instanceof Date || !isNaN(new Date(t)) ? Math.floor(new Date(t).getTime() / 1000) : String(t);
+          const k = [r[cols.indexOf('tid')], tab === 'Feedback' ? r[cols.indexOf('type')] : '', r[cols.indexOf('message')], sec].join('|');
+          if (seen.has(k)) { dubbel++; trash.push([now, batch, tab, String(r[cols.indexOf('tid')]), JSON.stringify(r)]); continue; }
+          seen.add(k);
+        }
+        keep.push(r);
+      }
+      if (!dubbel && !leeg) continue;
+      sh.getRange(2, 1, vals.length, w).clearContent();
+      if (keep.length) sh.getRange(2, 1, keep.length, w).setValues(keep);
+      uit[tab] = { dubbel, leeg };
+    }
+    if (trash.length) { const t = trash_(ss); t.getRange(t.getLastRow() + 1, 1, trash.length, 5).setValues(trash); }
+    console.log(Object.keys(uit).length ? 'Opgeschoond: ' + JSON.stringify(uit) + (trash.length ? ' · dubbelen in Prullenbak, batch ' + batch : '') : 'Niets op te schonen: geen dubbele of lege rijen.');
+    return { ok: true, batch: trash.length ? batch : '', uit };
+  } finally { lock.releaseLock(); }
 }
 
 /* ---------- dashboard ---------- */
@@ -452,7 +505,7 @@ function rows_(ss, name, cols, max) {
   const sh = ss.getSheetByName(name); if (!sh) return [];
   const last = sh.getLastRow(); if (last < 2) return [];
   const n = Math.min(max, last - 1);                 // nieuwste staan bovenaan: de eerste n rijen
-  return sh.getRange(2, 1, n, cols.length).getValues().map(v => {
+  return sh.getRange(2, 1, n, cols.length).getValues().filter(v => !leeg_(v)).map(v => {   // s6: lege rijen (PK-6) niet doorgeven
     const o = {}; cols.forEach(([k], i) => { o[k] = v[i] instanceof Date ? v[i].toISOString() : v[i]; }); return o;
   });
 }
