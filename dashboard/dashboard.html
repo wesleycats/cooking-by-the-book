@@ -300,7 +300,7 @@ const isProef = e => !!det(e).proef;   // clicked through during a proefrit (onb
 // onboarding missions, in order (same ids as ONBOARDING.missions in the app)
 const MISSIONS = [['proefrit', 'Proefrit'], ['feedback', 'Feedback gegeven'], ['koken', 'Echt gekookt']];
 
-let data = null, recipes = [], view = { tester: null, ff: 'open', ft: '' }, loading = false;
+let data = null, recipes = [], view = { tester: null, ff: 'nietlinear', ft: '' }, loading = false;
 
 /* ---------- gegevens ophalen ----------
    Eerst gewoon fetch. Blokkeert de browser dat (adblocker, privacy-extensie, Brave/Edge-bescherming), dan via JSONP:
@@ -637,7 +637,7 @@ function itemHtml(i, g){
     ${k ? `<input class="knote" data-note="${esc(k.bid)}" value="${esc(k.note || '')}" placeholder="Notitie (bv. fixen in v51)" maxlength="500" aria-label="Notitie">` : ''}
   </article>`;
 }
-const FF = [['open', 'Open'], ['nietlinear', 'Nog niet in Linear'], ['linear', 'In Linear'], ['gepland', 'Gepland'], ['bewaard', '★ Bewaard'], ['niet doen', 'Niet doen'], ['opgelost', 'Opgelost'], ['alles', 'Alles'], ['Werkt niet', '🐞 Werkt niet'], ['Fout', '⚠ Fouten'], ['Snap ik niet', '? Snap ik niet'], ['Idee', '💡 Idee'], ['Mooi', '♥ Mooi']];
+const FF = [['nietlinear', 'Nog niet in Linear'], ['linear', 'In Linear'], ['open', 'Open'], ['gepland', 'Gepland'], ['bewaard', '★ Bewaard'], ['niet doen', 'Niet doen'], ['opgelost', 'Opgelost'], ['alles', 'Alles'], ['Werkt niet', '🐞 Werkt niet'], ['Fout', '⚠ Fouten'], ['Snap ik niet', '? Snap ik niet'], ['Idee', '💡 Idee'], ['Mooi', '♥ Mooi']];
 const matchF = (i, k) => k === 'alles' || (k === 'open' ? isOpen(i) : k === 'linear' ? !!linOf(i) : k === 'nietlinear' ? isOpen(i) && !linOf(i) : k === 'bewaard' ? !!i.kept : ['gepland', 'niet doen', 'opgelost'].includes(k) ? (i.status || 'nieuw') === k : i.type === k);
 function filtered(d){
   return d.items.filter(i => matchF(i, view.ff) && (!view.ft || i.tid === view.ft));
