@@ -351,7 +351,8 @@ function linearInfo_() {
   return { on: !!p.getProperty('LINEAR_KEY'), at: Number(p.getProperty('LINEAR_AT') || 0) || null, error: p.getProperty('LINEAR_ERR') || '', base: p.getProperty('LINEAR_BASE') || '' };
 }
 function linearIssues_(key) {
-  const q = 'query($after:String){ issues(first:100, after:$after, includeArchived:true, filter:{ description:{ contains:"Dashboard:" } }){ nodes{ identifier url description state{ name type } } pageInfo{ hasNextPage endCursor } } }';
+  // alle issues ophalen en hier filteren (geen API-filter op de beschrijving: minder kans dat een API-wijziging dit breekt)
+  const q = 'query($after:String){ issues(first:100, after:$after, includeArchived:true){ nodes{ identifier url description state{ name type } } pageInfo{ hasNextPage endCursor } } }';
   const out = []; let after = null;
   for (let page = 0; page < 10; page++) {
     const r = UrlFetchApp.fetch('https://api.linear.app/graphql', { method: 'post', contentType: 'application/json', headers: { Authorization: key }, payload: JSON.stringify({ query: q, variables: { after } }), muteHttpExceptions: true });
@@ -360,7 +361,7 @@ function linearIssues_(key) {
     const c = j.data.issues; out.push(...c.nodes);
     if (!c.pageInfo.hasNextPage) break; after = c.pageInfo.endCursor;
   }
-  return out;
+  return out.filter(i => /Dashboard:/.test(i.description || ''));
 }
 const STATUS_FROM_LINEAR_ = st => st.type === 'completed' ? 'opgelost' : st.type === 'canceled' ? 'niet doen' : st.type === 'triage' ? 'nieuw' : 'gepland';   // Triage = nog niet besloten
 const LINEAR_CLOSED_ = st => ['completed', 'canceled', 'duplicate'].includes(st.type);
