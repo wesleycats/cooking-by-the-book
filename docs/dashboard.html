@@ -327,7 +327,7 @@ const NEED_API = 4;   // d6: Linear-koppeling (script s7)
 const oldScript = () => !DEMO && data && !(Number(data.api) >= NEED_API);
 /* Versies: DASH_VERSION = dit dashboard (ophogen bij elke wijziging), LATEST_SCRIPT = nieuwste Code.gs in de repo.
    Het script stuurt zijn eigen nummer mee (SCRIPT_VERSION); scripts van vóór s4 hebben dat nog niet. */
-const DASH_VERSION = 'd6', LATEST_SCRIPT = 's7';
+const DASH_VERSION = 'd7', LATEST_SCRIPT = 's8';
 const scriptVer = () => !data ? '' : data.script ? String(data.script) : Number(data.api) >= 3 ? 's3' : 'oud';
 const vnum = v => parseInt(String(v).replace(/\D/g, ''), 10) || 0;
 function renderVersion(){
@@ -649,7 +649,7 @@ function feedbackPane(d){
   if (byPrio) {   // één kaart per groep, hoogste score eerst; gesloten meldingen onderaan
     const gs = d.groups.filter(g => g.items.some(i => list.includes(i)));
     const closed = list.filter(i => !isOpen(i));
-    body = gs.map(g => itemHtml(g.lead, g)).join('') + closed.map(i => itemHtml(i)).join('');
+    body = gs.map(g => itemHtml(g.items.find(i => list.includes(i)) || g.lead, g)).join('') + closed.map(i => itemHtml(i)).join('');   // d6: de kaart toont een melding die in deze selectie valt
   } else body = list.map(i => itemHtml(i)).join('');
   return `<section class="pane">
     <div class="filters">${FF.map(([k, l]) => `<button class="f" type="button" data-ff="${esc(k)}" aria-pressed="${view.ff === k}">${l}<small>${count(k)}</small></button>`).join('')}

@@ -23,7 +23,7 @@ const TZ = 'Europe/Amsterdam';
 // versie van de dashboard-API: het dashboard waarschuwt als het script ouder is dan het verwacht (nieuwe versie niet geïmplementeerd)
 const API_VERSION = 4;   // 4 (s7): kolommen linear + linearState, data.linear, actie 'linear'
 // versie van deze code; ophogen bij elke wijziging. Zet hetzelfde nummer bij Implementaties beheren → Nieuwe versie → Beschrijving.
-const SCRIPT_VERSION = 's7';
+const SCRIPT_VERSION = 's8';
 const NOTIFY = { errors: true, feedback: true, newTester: true };
 // ntfy.sh (gratis) telt per IP: 250 berichten/dag, 60 achter elkaar. Apps Script deelt IP's met andere scripts, dus
 // alles wordt gebundeld: urgent (fout, "Werkt niet") en overig elk in een eigen bundel, die pas vertrekt als de oudste
@@ -46,7 +46,7 @@ const TABS = {
   Feedback: [['fid','ID'],['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['type','Soort'],['message','Bericht'],['screen','Scherm'],['rid','Recept-ID'],['context','Context'],['status','Status'],['prio','Prioriteit'],['linear','Linear'],['linearState','Linear-status']],
   Fouten:   [['eid','ID'],['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['message','Melding'],['source','Bron'],['screen','Scherm'],['rid','Recept-ID'],['version','Versie'],['device','Toestel'],['stack','Stack'],['status','Status'],['prio','Prioriteit'],['linear','Linear'],['linearState','Linear-status']],
   // bewaarde meldingen: los van testers, dus verwijderen raakt ze niet (geen tester-ID, geen toestel)
-  Bewaard:  [['bid','ID'],['src','Bron-ID'],['srcTab','Bron'],['savedAt','Bewaard op'],['at','Tijd'],['name','Naam'],['type','Soort'],['message','Bericht'],['screen','Scherm'],['rid','Recept-ID'],['prio','Prioriteit'],['status','Status'],['reason','Reden'],['note','Notitie'],['linear','Linear']]
+  Bewaard:  [['bid','ID'],['src','Bron-ID'],['srcTab','Bron'],['savedAt','Bewaard op'],['at','Tijd'],['name','Naam'],['type','Soort'],['message','Bericht'],['screen','Scherm'],['rid','Recept-ID'],['prio','Prioriteit'],['status','Status'],['reason','Reden'],['note','Notitie'],['linear','Linear'],['linearState','Linear-status']]
 };
 
 /* ---------- eenmalig ---------- */
@@ -390,29 +390,40 @@ function linearKoppelen() {
       }
     }
     const ss = SpreadsheetApp.getActive(); let linked = 0, changed = 0;
+    const findIss = (id, who, tk) => byId[String(id)] || (tk && who.map(w => byTime[w + '|' + tk]).find(Boolean));
+    const tkOf = v => { const at = v instanceof Date ? v : new Date(v); return isNaN(at) ? '' : Utilities.formatDate(at, TZ, 'yyyy-M-d H:m:s'); };
     for (const tab of ['Feedback', 'Fouten']) {
       const sh = ss.getSheetByName(tab); if (!sh || sh.getLastRow() < 2) continue;
       const cols = TABS[tab].map(c => c[0]), n = sh.getLastRow() - 1, vals = sh.getRange(2, 1, n, cols.length).getValues();
       const ci = k => cols.indexOf(k), li = ci('linear'), si = ci('linearState');
-      const out = vals.map(r => [r[li], r[si]]), marks = [], keptLinks = [];
+      const out = vals.map(r => [r[li], r[si]]), marks = [];
       vals.forEach((r, k) => {
         if (leeg_(r)) return;
-        const at = r[ci('at')] instanceof Date ? r[ci('at')] : new Date(r[ci('at')]);
-        const tk = isNaN(at) ? '' : Utilities.formatDate(at, TZ, 'yyyy-M-d H:m:s');
         const who = [r[ci('tid')], r[ci('name')]].map(x => String(x || '').trim().toLowerCase()).filter(Boolean);
-        const iss = byId[String(r[0])] || (tk && who.map(w => byTime[w + '|' + tk]).find(Boolean));
+        const iss = findIss(r[0], who, tkOf(r[ci('at')]));
         const want = iss ? [iss.identifier, iss.state.name] : ['', ''];
         if (iss) linked++;
         if (String(out[k][0] || '') !== want[0] || String(out[k][1] || '') !== want[1]) { out[k] = want; changed++; }
         const st = iss ? STATUS_FROM_LINEAR_(iss.state) : null;
         if (st && String(r[ci('status')] || 'nieuw') !== st) marks.push([String(r[0]), st]);
-        if (iss) keptLinks.push([String(r[0]), iss.identifier]);
       });
       sh.getRange(2, li + 1, n, 2).setValues(out);
       marks.forEach(([id, st]) => mark_(ss, { tab, id, status: st }));   // gepland / niet doen worden daarbij automatisch bewaard
-      const b = ss.getSheetByName('Bewaard'), bl = TABS.Bewaard.findIndex(c => c[0] === 'linear') + 1;
-      keptLinks.forEach(([id, ident]) => { const kr = findKept_(ss, id); if (kr && b.getRange(kr, bl).getValue() !== ident) b.getRange(kr, bl).setValue(ident); });
       changed += marks.length;
+    }
+    // Bewaard: ook meldingen waarvan de tester al verwijderd is (alleen nog hier); koppelen op bron-ID of naam @ tijd
+    const b = ss.getSheetByName('Bewaard');
+    if (b && b.getLastRow() > 1) {
+      const cols = TABS.Bewaard.map(c => c[0]), n = b.getLastRow() - 1, vals = b.getRange(2, 1, n, cols.length).getValues(), ci = k => cols.indexOf(k);
+      const out = vals.map(r => [r[ci('linear')], r[ci('linearState')]]), st = vals.map(r => [r[ci('status')]]); let diff = false;
+      vals.forEach((r, k) => {
+        if (leeg_(r)) return;
+        const iss = findIss(r[ci('src')], [String(r[ci('name')] || '').trim().toLowerCase()].filter(Boolean), tkOf(r[ci('at')]));
+        const want = iss ? [iss.identifier, iss.state.name] : ['', ''];
+        if (String(out[k][0] || '') !== want[0] || String(out[k][1] || '') !== want[1]) { out[k] = want; diff = true; }
+        if (iss && String(st[k][0] || 'nieuw') !== STATUS_FROM_LINEAR_(iss.state)) { st[k] = [STATUS_FROM_LINEAR_(iss.state)]; diff = true; changed++; }
+      });
+      if (diff) { b.getRange(2, ci('linear') + 1, n, 2).setValues(out); b.getRange(2, ci('status') + 1, n, 1).setValues(st); }
     }
     p.setProperty('LINEAR_AT', String(Date.now())); p.setProperty('LINEAR_ERR', '');
     return { ok: true, issues: issues.length, linked, changed, at: Date.now() };

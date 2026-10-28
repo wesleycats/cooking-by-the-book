@@ -261,6 +261,7 @@ const fcol = k => ctx.TABS ? 0 : 0; const FC = ['fid','at','tid','name','type','
 assert(get({ key: K }).linear.on === false && /sleutel/i.test(get({ key: K, action: 'linear' }).error || ''), 'zonder sleutel: koppelen meldt dat de sleutel ontbreekt');
 assert(linearCalls === 0, 'zonder sleutel: Linear wordt niet aangeroepen');
 sheets.Instellingen.rows[10] = sheets.Instellingen.rows[10] || []; sheets.Instellingen.rows[10][1] = 'lin_api_GEHEIM123';
+sheets.Bewaard.rows.push(['bweesje1', 'weg12345', 'Feedback', new Date(), new Date('2026-10-13T13:04:54Z'), 'Stan', 'Idee', 'afbeeldingen', 'kookmodus', '', '', 'gepland', 'gepland', '']);
 sheets.Feedback.rows.push(['oudmelding', new Date('2026-10-13T13:09:26Z'), '', 'Oude Naam', 'Idee', 'zonder tester-id', 'keuken', '', '', 'nieuw', '']);
 const id1 = row('Feedback', 'linear een')[0], id3 = row('Feedback', 'linear drie')[0], idE = row('Fouten', 'linear fout')[0];
 linearIssues = [
@@ -268,9 +269,11 @@ linearIssues = [
   { identifier: 'PK-22', url: 'https://linear.app/cbtb/issue/PK-22/idee', state: { name: 'Klaar', type: 'completed' }, description: 'Idee.\n\nDashboard: LINEA-R7K2 @ 28-10-2026, 08:15:05' },   // oude kopie: tester + tijd (Amsterdam)
   { identifier: 'PK-23', url: 'https://linear.app/cbtb/issue/PK-23/x', state: { name: 'Niet doen', type: 'canceled' }, description: '**Dashboard:** `' + id3 + '`' },
   { identifier: 'PK-25', url: 'https://linear.app/cbtb/issue/PK-25/z', state: { name: 'Backlog', type: 'backlog' }, description: 'Dashboard: TESTWES-27R3 @ 24-10-2026, 20:24:00, Oude Naam @ 13-10-2026, 15:09:26' },
+  { identifier: 'PK-15', url: 'https://linear.app/cbtb/issue/PK-15/a', state: { name: 'Backlog', type: 'backlog' }, description: 'Dashboard: Stan @ 13-10-2026, 15:04:54' },
   { identifier: 'PK-24', url: 'https://linear.app/cbtb/issue/PK-24/y', state: { name: 'Duplicate', type: 'duplicate' }, description: 'Dashboard: ' + id1 }];
 const lk = get({ key: K, action: 'linear' });
 assert(row('Feedback', 'zonder tester-id')[FC.indexOf('linear')] === 'PK-25', 'heel oude melding zonder tester-ID: gekoppeld op naam @ tijd');
+assert(sheets.Bewaard.rows.find(r => r[0] === 'bweesje1')[14] === 'PK-15' && sheets.Bewaard.rows.find(r => r[0] === 'bweesje1')[15] === 'Backlog', 'bewaarde melding van verwijderde tester: gekoppeld op naam @ tijd');
 assert(lk.ok && lk.linked === 5 && linearAuth === 'lin_api_GEHEIM123', 'koppelen: 5 meldingen gekoppeld, sleutel meegestuurd');
 assert(props.LINEAR_KEY === 'lin_api_GEHEIM123' && !String(sheets.Instellingen.rows[10][1]).includes('lin_api_'), 'sleutel naar scripteigenschappen, cel B11 gewist');
 const r1l = row('Feedback', 'linear een');
@@ -294,5 +297,5 @@ assert(bad.error && /Linear/.test(get({ key: K }).linear.error) && row('Feedback
 linearStatus = 200; get({ key: K, action: 'linear' }); assert(!get({ key: K }).linear.error, 'daarna weer goed: fout weg');
 ctx.setup(); assert(props.LINEAR_KEY === 'lin_api_GEHEIM123' && /opgeslagen/.test(sheets.Instellingen.rows[10][1]), 'setup opnieuw: sleutel blijft bewaard');
 assert(sheets.Feedback.rows[0][11] === 'Linear' && sheets.Feedback.rows[0][12] === 'Linear-status', 'setup: kolomkoppen Linear en Linear-status');
-assert(get({ key: K }).script === 's7' && get({ key: K }).api === 4, 'scriptversie s7, API 4');
+assert(get({ key: K }).script === 's8' && get({ key: K }).api === 4, 'scriptversie s8, API 4');
 console.log(fails ? fails + ' FOUT' : 'ALLES OK'); process.exit(fails ? 1 : 0);
