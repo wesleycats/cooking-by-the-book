@@ -21,9 +21,9 @@
 
 const TZ = 'Europe/Amsterdam';
 // versie van de dashboard-API: het dashboard waarschuwt als het script ouder is dan het verwacht (nieuwe versie niet geïmplementeerd)
-const API_VERSION = 3;
+const API_VERSION = 4;   // 4 (s7): kolommen linear + linearState, data.linear, actie 'linear'
 // versie van deze code; ophogen bij elke wijziging. Zet hetzelfde nummer bij Implementaties beheren → Nieuwe versie → Beschrijving.
-const SCRIPT_VERSION = 's6';
+const SCRIPT_VERSION = 's7';
 const NOTIFY = { errors: true, feedback: true, newTester: true };
 // ntfy.sh (gratis) telt per IP: 250 berichten/dag, 60 achter elkaar. Apps Script deelt IP's met andere scripts, dus
 // alles wordt gebundeld: urgent (fout, "Werkt niet") en overig elk in een eigen bundel, die pas vertrekt als de oudste
@@ -43,10 +43,10 @@ const TABS = {
   Testers:  [['id','ID'],['name','Naam'],['group','Groep'],['first','Eerste keer'],['last','Laatst actief'],['days','Actieve dagen'],['events','Events'],['device','Toestel'],['size','Scherm'],['version','Versie'],['dayList','Dagen']],
   Events:   [['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['kind','Soort'],['rid','Recept-ID'],['step','Stap'],['screen','Scherm'],['details','Details']],
   Sessies:  [['sid','Sessie-ID'],['tid','Tester-ID'],['name','Naam'],['rid','Recept-ID'],['title','Recept'],['date','Datum'],['servings','Porties'],['min','Kooktijd (min)'],['recipeMin','Recepttijd (min)'],['rating','Sterren'],['chips','Chips'],['note','Notitie'],['adj','Timeraanpassingen'],['updated','Bijgewerkt']],
-  Feedback: [['fid','ID'],['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['type','Soort'],['message','Bericht'],['screen','Scherm'],['rid','Recept-ID'],['context','Context'],['status','Status'],['prio','Prioriteit']],
-  Fouten:   [['eid','ID'],['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['message','Melding'],['source','Bron'],['screen','Scherm'],['rid','Recept-ID'],['version','Versie'],['device','Toestel'],['stack','Stack'],['status','Status'],['prio','Prioriteit']],
+  Feedback: [['fid','ID'],['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['type','Soort'],['message','Bericht'],['screen','Scherm'],['rid','Recept-ID'],['context','Context'],['status','Status'],['prio','Prioriteit'],['linear','Linear'],['linearState','Linear-status']],
+  Fouten:   [['eid','ID'],['at','Tijd'],['tid','Tester-ID'],['name','Naam'],['message','Melding'],['source','Bron'],['screen','Scherm'],['rid','Recept-ID'],['version','Versie'],['device','Toestel'],['stack','Stack'],['status','Status'],['prio','Prioriteit'],['linear','Linear'],['linearState','Linear-status']],
   // bewaarde meldingen: los van testers, dus verwijderen raakt ze niet (geen tester-ID, geen toestel)
-  Bewaard:  [['bid','ID'],['src','Bron-ID'],['srcTab','Bron'],['savedAt','Bewaard op'],['at','Tijd'],['name','Naam'],['type','Soort'],['message','Bericht'],['screen','Scherm'],['rid','Recept-ID'],['prio','Prioriteit'],['status','Status'],['reason','Reden'],['note','Notitie']]
+  Bewaard:  [['bid','ID'],['src','Bron-ID'],['srcTab','Bron'],['savedAt','Bewaard op'],['at','Tijd'],['name','Naam'],['type','Soort'],['message','Bericht'],['screen','Scherm'],['rid','Recept-ID'],['prio','Prioriteit'],['status','Status'],['reason','Reden'],['note','Notitie'],['linear','Linear']]
 };
 
 /* ---------- eenmalig ---------- */
@@ -70,8 +70,9 @@ function setup() {
   const set = ss.getSheetByName('Instellingen') || ss.insertSheet('Instellingen');
   const keep = c => { const v = set.getRange(c).getValue(); return v === null || v === undefined ? '' : String(v); };      // wat Wes zelf invulde, bewaren bij opnieuw uitvoeren
   const keepUrl = keep('B4'), keepToken = keep('B7'), keepMail = keep('B8'), keepU = keep('B9'), keepR = keep('B10');
+  if (/^lin_api_/.test(keep('B11'))) props.setProperty('LINEAR_KEY', keep('B11'));   // s7: sleutel naar de scripteigenschappen, niet in de Sheet laten staan
   set.clear();
-  set.getRange(1, 1, 10, 2).setValues([
+  set.getRange(1, 1, 11, 2).setValues([
     ['Meldingskanaal (ntfy)', props.getProperty('NTFY_TOPIC')],
     ['Abonneren', 'Installeer de app "ntfy" → + → vul het meldingskanaal hierboven in (server ntfy.sh)'],
     ['Dashboardsleutel', props.getProperty('DASHBOARD_KEY')],
@@ -81,19 +82,21 @@ function setup() {
     ['ntfy-token (optioneel)', keepToken || '(leeg = zonder account; plak hier een gratis ntfy.sh-token, begint met tk_)'],
     ['Mail', /^(altijd|nee)$/i.test(keepMail) ? keepMail.toLowerCase() : 'reserve'],
     ['Urgent bundelen: elke … uur', keepU !== '' ? keepU : DEFAULT_HOURS.urgent],
-    ['Overig bundelen: elke … uur', keepR !== '' ? keepR : DEFAULT_HOURS.rest]
+    ['Overig bundelen: elke … uur', keepR !== '' ? keepR : DEFAULT_HOURS.rest],
+    ['Linear-sleutel', LINEAR_SAVED_()]
   ]);
   linkBijwerken_();
-  set.getRange(8, 3, 3, 1).setValues([
+  set.getRange(8, 3, 4, 1).setValues([
     ['reserve = alleen als de pushmelding mislukt · altijd = push én mail · nee = geen mail'],
     ['Fouten en "Werkt niet". Getal in uren, bv. 1 of 0,5. 0 = direct. Geldt voor push én mail.'],
-    ['Snap ik niet, ideeën, mooi, nieuwe testers. Getal in uren, bv. 6. 0 = direct.']
+    ['Snap ik niet, ideeën, mooi, nieuwe testers. Getal in uren, bv. 6. 0 = direct.'],
+    ['Linear → Settings → Security & access → Personal API keys → nieuwe sleutel (begint met lin_api_) hier plakken. Het script bewaart hem veilig en wist de cel.']
   ]);
-  set.getRange('A1:A10').setFontWeight('bold'); set.setColumnWidth(1, 220); set.setColumnWidth(2, 380); set.setColumnWidth(3, 520);
+  set.getRange('A1:A11').setFontWeight('bold'); set.setColumnWidth(1, 220); set.setColumnWidth(2, 380); set.setColumnWidth(3, 520);
   try {   // keuzelijst en getalcontrole, zodat een tikfout niets breekt
     set.getRange('B8').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['reserve', 'altijd', 'nee'], true).build());
     set.getRange('B9:B10').setDataValidation(SpreadsheetApp.newDataValidation().requireNumberBetween(0, 48).setHelpText('Aantal uren tussen 0 en 48').build());
-    set.getRange('B8:B10').setBackground('#fff8e1');
+    set.getRange('B8:B11').setBackground('#fff8e1');
   } catch (err) { console.warn('Validatie niet gezet: ' + err); }
   // bundel-trigger: verstuurt opgespaarde meldingen ook als er even niets binnenkomt
   if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'digestVersturen'))
@@ -199,6 +202,7 @@ function hours_(cell, def) {
 function digestVersturen(force) {
   const p = PropertiesService.getScriptProperties();
   try { opruimen_(); } catch (err) { console.warn('Opruimen mislukt: ' + err); }
+  try { if (linearKey_()) linearKoppelen(); } catch (err) { console.warn('Linear koppelen mislukt: ' + err); }
   const kinds = [['urgent', hours_('B9', DEFAULT_HOURS.urgent), 4, '⚠️', 'dringende meldingen', ['warning']],
                  ['rest', hours_('B10', DEFAULT_HOURS.rest), 3, '📋', 'nieuwe meldingen', ['clipboard']]];
   for (const [name, hrs, prio, ic, label, tags] of kinds) {
@@ -328,6 +332,90 @@ function meldingenOpschonen() {
   } finally { lock.releaseLock(); }
 }
 
+/* ---------- Linear-koppeling (s7, BL-5) ----------
+   Claude maakt de Linear-issues uit "Kopieer voor Claude" en zet per melding in de beschrijving een regel
+   "Dashboard: <ID>" (of, voor kopieën van vóór d6: "Dashboard: <tester-ID> @ <dd-mm-jjjj, uu:mm:ss>").
+   Dit script zoekt die regels op (elke 10 min via de trigger, bij het openen van het dashboard als het >2 min geleden is,
+   en met de knop in het dashboard) en schrijft per melding het issue (PK-21) en de Linear-status in de Sheet.
+   Status volgt Linear: afgerond (Klaar) → opgelost, geannuleerd (Niet doen) → niet doen, Triage → nieuw, al het andere → gepland.
+   De sleutel staat alleen in de scripteigenschappen (Instellingen B11 plakken → setup of de volgende koppelronde). */
+const LINEAR_SAVED_ = () => PropertiesService.getScriptProperties().getProperty('LINEAR_KEY') ? '✓ opgeslagen (plak hier een nieuwe sleutel om te vervangen)' : '(plak hier je Linear-sleutel, begint met lin_api_)';
+function linearKey_() {
+  const p = PropertiesService.getScriptProperties(), set = SpreadsheetApp.getActive().getSheetByName('Instellingen');
+  const cell = set ? String(set.getRange('B11').getValue() || '').trim() : '';
+  if (/^lin_api_\w+$/.test(cell)) { p.setProperty('LINEAR_KEY', cell); set.getRange('B11').setValue(LINEAR_SAVED_()); }
+  return p.getProperty('LINEAR_KEY') || '';
+}
+function linearInfo_() {
+  const p = PropertiesService.getScriptProperties();
+  return { on: !!p.getProperty('LINEAR_KEY'), at: Number(p.getProperty('LINEAR_AT') || 0) || null, error: p.getProperty('LINEAR_ERR') || '', base: p.getProperty('LINEAR_BASE') || '' };
+}
+function linearIssues_(key) {
+  const q = 'query($after:String){ issues(first:100, after:$after, includeArchived:true, filter:{ description:{ contains:"Dashboard:" } }){ nodes{ identifier url description state{ name type } } pageInfo{ hasNextPage endCursor } } }';
+  const out = []; let after = null;
+  for (let page = 0; page < 10; page++) {
+    const r = UrlFetchApp.fetch('https://api.linear.app/graphql', { method: 'post', contentType: 'application/json', headers: { Authorization: key }, payload: JSON.stringify({ query: q, variables: { after } }), muteHttpExceptions: true });
+    const code = r.getResponseCode(), j = (() => { try { return JSON.parse(r.getContentText()); } catch (e) { return {}; } })();
+    if (code !== 200 || j.errors) throw new Error('Linear ' + code + ': ' + (j.errors ? j.errors.map(e => e.message).join('; ') : r.getContentText().slice(0, 150)).slice(0, 200));
+    const c = j.data.issues; out.push(...c.nodes);
+    if (!c.pageInfo.hasNextPage) break; after = c.pageInfo.endCursor;
+  }
+  return out;
+}
+const STATUS_FROM_LINEAR_ = st => st.type === 'completed' ? 'opgelost' : st.type === 'canceled' ? 'niet doen' : st.type === 'triage' ? 'nieuw' : 'gepland';   // Triage = nog niet besloten
+const LINEAR_CLOSED_ = st => ['completed', 'canceled', 'duplicate'].includes(st.type);
+// "28-10-2026, 08:12:40" (nl-NL) of "2026-10-28 08:12:40" → "2026-10-28 8:12:40" (zonder voorloopnullen), zelfde vorm als de Sheet-tijd in TZ
+function timeKey_(d, mo, y, h, mi, s) { return [+y, +mo, +d].join('-') + ' ' + [+h, +mi, +s].join(':'); }
+function linearKoppelen() {
+  const p = PropertiesService.getScriptProperties(), key = linearKey_();
+  if (!key) return { error: 'Geen Linear-sleutel: plak hem in Instellingen B11.' };
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    let issues;
+    try { issues = linearIssues_(key); }
+    catch (err) { p.setProperty('LINEAR_ERR', String(err.message || err).slice(0, 300)); p.setProperty('LINEAR_AT', String(Date.now())); return { error: String(err.message || err) }; }
+    // per melding: het issue (bij meer issues wint het eerste dat nog open is, anders het eerste)
+    const byId = {}, byTime = {};
+    const put = (map, k, iss) => { const cur = map[k]; if (!cur || LINEAR_CLOSED_(cur.state) && !LINEAR_CLOSED_(iss.state)) map[k] = iss; };   // open issue wint (bv. duplicaat → het echte issue)
+    for (const iss of issues) {
+      if (!p.getProperty('LINEAR_BASE') && iss.url) p.setProperty('LINEAR_BASE', iss.url.replace(/\/issue\/.*$/, ''));
+      const lines = String(iss.description || '').match(/Dashboard:[^\n]*/g) || [];
+      for (const line of lines) {
+        const rest = line.replace(/^Dashboard:\s*/, '').replace(/[`*_]/g, '');
+        const tre = /([A-Z0-9]{1,8}-[A-Z0-9]{4})\s*@\s*(\d{1,2})-(\d{1,2})-(\d{4}),?\s+(\d{1,2}):(\d{2}):(\d{2})/g; let m;
+        while ((m = tre.exec(rest))) put(byTime, m[1] + '|' + timeKey_(m[2], m[3], m[4], m[5], m[6], m[7]), iss);
+        rest.replace(tre, ' ').split(/[\s,;]+/).filter(x => /^[a-z][a-z0-9]{7}$/.test(x)).forEach(x => put(byId, x, iss));
+      }
+    }
+    const ss = SpreadsheetApp.getActive(); let linked = 0, changed = 0;
+    for (const tab of ['Feedback', 'Fouten']) {
+      const sh = ss.getSheetByName(tab); if (!sh || sh.getLastRow() < 2) continue;
+      const cols = TABS[tab].map(c => c[0]), n = sh.getLastRow() - 1, vals = sh.getRange(2, 1, n, cols.length).getValues();
+      const ci = k => cols.indexOf(k), li = ci('linear'), si = ci('linearState');
+      const out = vals.map(r => [r[li], r[si]]), marks = [], keptLinks = [];
+      vals.forEach((r, k) => {
+        if (leeg_(r)) return;
+        const at = r[ci('at')] instanceof Date ? r[ci('at')] : new Date(r[ci('at')]);
+        const tk = isNaN(at) ? '' : String(r[ci('tid')]) + '|' + Utilities.formatDate(at, TZ, 'yyyy-M-d H:m:s');
+        const iss = byId[String(r[0])] || byTime[tk];
+        const want = iss ? [iss.identifier, iss.state.name] : ['', ''];
+        if (iss) linked++;
+        if (String(out[k][0] || '') !== want[0] || String(out[k][1] || '') !== want[1]) { out[k] = want; changed++; }
+        const st = iss ? STATUS_FROM_LINEAR_(iss.state) : null;
+        if (st && String(r[ci('status')] || 'nieuw') !== st) marks.push([String(r[0]), st]);
+        if (iss) keptLinks.push([String(r[0]), iss.identifier]);
+      });
+      sh.getRange(2, li + 1, n, 2).setValues(out);
+      marks.forEach(([id, st]) => mark_(ss, { tab, id, status: st }));   // gepland / niet doen worden daarbij automatisch bewaard
+      const b = ss.getSheetByName('Bewaard'), bl = TABS.Bewaard.findIndex(c => c[0] === 'linear') + 1;
+      keptLinks.forEach(([id, ident]) => { const kr = findKept_(ss, id); if (kr && b.getRange(kr, bl).getValue() !== ident) b.getRange(kr, bl).setValue(ident); });
+      changed += marks.length;
+    }
+    p.setProperty('LINEAR_AT', String(Date.now())); p.setProperty('LINEAR_ERR', '');
+    return { ok: true, issues: issues.length, linked, changed, at: Date.now() };
+  } finally { lock.releaseLock(); }
+}
+
 /* ---------- dashboard ---------- */
 function doGet(e) {
   const p = e.parameter || {};
@@ -347,8 +435,10 @@ function doGet(e) {
   if (p.action === 'unkeep') return json_(unkeep_(ss, String(p.id || '')));
   if (p.action === 'delete') return json_(deleteTesters_(ss, String(p.ids || ''), p.scope === 'all' ? 'all' : 'data', p.wipeKept === '1'));
   if (p.action === 'undo') return json_(undoDelete_(ss, String(p.batch || '')));
+  if (p.action === 'linear') return json_(linearKoppelen());
   if (p.action) return json_({ error: 'Onbekende actie: ' + p.action, api: API_VERSION, script: SCRIPT_VERSION });
-  const out = { generated: new Date().toISOString(), api: API_VERSION, script: SCRIPT_VERSION };
+  try { if (linearKey_() && Date.now() - Number(PropertiesService.getScriptProperties().getProperty('LINEAR_AT') || 0) > 120000) linearKoppelen(); } catch (err) { console.warn('Linear: ' + err); }
+  const out = { generated: new Date().toISOString(), api: API_VERSION, script: SCRIPT_VERSION, linear: linearInfo_() };
   for (const [name, cols] of Object.entries(TABS)) out[name.toLowerCase()] = rows_(ss, name, cols, name === 'Events' ? 8000 : 2000);
   return json_(out);
 }

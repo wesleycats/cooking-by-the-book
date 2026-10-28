@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/svg+xml" href="icons/dashboard/dash-icon.svg">
+<link rel="apple-touch-icon" href="icons/dashboard/dash-apple-touch-180.png">
+<link rel="manifest" href="dashboard.webmanifest">
+<meta name="theme-color" content="#1C2419">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Proefkeuken">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Proefkeuken · Cooking by the Book</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Testoverzicht voor Wes. Leest de Google Sheet via het Apps Script (doGet met sleutel).
+   Kleuren: dezelfde tokens als de app (basilicum), licht en donker. */
+:root{--bg:#f6f8f4;--surface:#fff;--sunk:#ecf1e8;--line:#d9e1d3;--fg:#1c2419;--muted:#5d6b57;--accent:#2f6b3a;--accent-fg:#fff;--accent-soft:#dcebd8;--pop:#b7790a;--pop-soft:#fbefd2;--danger:#b3361f;--danger-soft:#f8e1dc;--good:#2f6b3a;
+  --f-display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;--f-body:"Figtree",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--f-mono:"DM Mono",ui-monospace,Menlo,monospace;--r:14px;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121711;--surface:#1a2119;--sunk:#222b20;--line:#2f3a2c;--fg:#e8eee4;--muted:#9aab93;--accent:#7fc489;--accent-fg:#0f1a10;--accent-soft:#24402a;--pop:#f2b63b;--pop-soft:#3a2f14;--danger:#ef7a62;--danger-soft:#3d1f18;--good:#7fc489;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121711;--surface:#1a2119;--sunk:#222b20;--line:#2f3a2c;--fg:#e8eee4;--muted:#9aab93;--accent:#7fc489;--accent-fg:#0f1a10;--accent-soft:#24402a;--pop:#f2b63b;--pop-soft:#3a2f14;--danger:#ef7a62;--danger-soft:#3d1f18;--good:#7fc489;color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--f-body);-webkit-font-smoothing:antialiased;padding-bottom:env(safe-area-inset-bottom)}
+button,input,select{font:inherit;color:inherit}
+h1,h2,h3{font-family:var(--f-display);line-height:1.15;margin:0;text-wrap:balance}
+.wrap{max-width:980px;margin:0 auto;padding:0 16px}
+:focus-visible{outline:2.5px solid var(--pop);outline-offset:2px;border-radius:6px}
+
+/* kop + tabs */
+.top{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top)}
+.top .row{display:flex;align-items:center;gap:10px;min-height:54px}
+.brand{font-family:var(--f-display);font-weight:800;font-size:1.1rem;letter-spacing:-.01em}
+.brand small{display:block;font:500 .72rem var(--f-mono);color:var(--muted);letter-spacing:.02em}
+.spacer{flex:1}
+.upd{font-size:.76rem;color:var(--muted);text-align:right}
+.iconbtn{width:38px;height:38px;border-radius:999px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer}
+.iconbtn svg{width:18px;height:18px}
+.iconbtn.spin svg{animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 16px 8px}
+.tabs::-webkit-scrollbar{display:none}
+.tab{border:0;background:none;padding:7px 12px;border-radius:999px;font-weight:600;font-size:.9rem;color:var(--muted);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.tab[aria-selected="true"]{background:var(--fg);color:var(--bg)}
+.tab .n{font:500 .72rem var(--f-mono);background:var(--danger);color:#fff;border-radius:999px;padding:1px 6px}
+
+/* ruimte onderin voor de navigatiebalk (main.wrap: anders wint .wrap{padding:0 16px} en schuift de balk over de laatste kaarten) */
+main.wrap{padding:16px 16px calc(104px + env(safe-area-inset-bottom))}
+body.selecting main.wrap{padding-bottom:calc(172px + env(safe-area-inset-bottom))}
+/* navigatie onderin (duimbereik, zoals een app) */
+.bnav{position:fixed;left:0;right:0;bottom:0;z-index:20;display:grid;grid-template-columns:repeat(5,1fr);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+.bnav button{border:0;background:none;display:grid;justify-items:center;gap:2px;padding:6px 0;font-size:.7rem;font-weight:600;color:var(--muted);cursor:pointer;position:relative;-webkit-tap-highlight-color:transparent}
+.bnav svg{width:23px;height:23px}
+.bnav button[aria-selected="true"]{color:var(--accent)}
+.bnav button[aria-selected="true"] .pill{background:var(--accent-soft)}
+.bnav .pill{display:grid;place-items:center;width:52px;height:30px;border-radius:999px;transition:background .15s}
+.bnav .n{position:absolute;top:2px;left:calc(50% + 8px);font:600 .66rem var(--f-mono);background:var(--danger);color:#fff;border-radius:999px;padding:1px 5px;min-width:17px;text-align:center}
+@media (min-width:760px){.bnav{left:50%;transform:translateX(-50%);bottom:14px;width:520px;border:1px solid var(--line);border-radius:22px;padding:6px 4px}}
+/* prioriteit en status */
+.prio{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.prio button{border:0;background:none;padding:4px 10px;font:600 .76rem var(--f-mono);color:var(--muted);cursor:pointer}
+.prio button+button{border-left:1px solid var(--line)}
+.prio button[aria-pressed="true"][data-p="P1"]{background:var(--danger);color:#fff}
+.prio button[aria-pressed="true"][data-p="P2"]{background:var(--pop);color:#1c2419}
+.prio button[aria-pressed="true"][data-p="P3"]{background:var(--accent-soft);color:var(--accent)}
+.prio.auto button[aria-pressed="true"]{opacity:.75}
+.st{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 26px 4px 10px;font-size:.8rem;font-weight:600;appearance:none;background:var(--surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%235d6b57" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>') no-repeat right 7px center/12px}
+.ia{flex-wrap:wrap;align-items:center}
+.ia .hint{font-size:.72rem;color:var(--muted)}
+/* d6: Linear-koppeling */
+.lin{display:inline-flex;align-items:center;gap:5px;font-size:.78rem;font-weight:600;padding:4px 10px;border-radius:999px;background:#5e6ad21f;color:#5e6ad2;text-decoration:none;white-space:nowrap}
+.lin svg{width:12px;height:12px}
+.lin.done{background:var(--accent-soft);color:var(--accent)}
+.lin.no{background:var(--sunk);color:var(--muted)}
+.chip.pend{background:#5e6ad214;color:#5e6ad2}
+.linbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:.8rem;color:var(--muted)}
+.linbar.err{color:var(--danger)}
+.linbar button{border:0;background:none;color:inherit;font:inherit;font-weight:600;text-decoration:underline;cursor:pointer;padding:0}
+.star{border:0;background:none;font-size:1.25rem;line-height:1;padding:2px 2px 2px 6px;cursor:pointer;color:var(--muted)}
+.star[aria-pressed="true"]{color:var(--pop)}
+.knote{width:100%;border:1px dashed var(--line);border-radius:10px;padding:7px 10px;font-size:.84rem;background:var(--sunk)}
+.dup{font:600 .72rem var(--f-mono);background:var(--sunk);color:var(--fg);border-radius:999px;padding:2px 8px}
+details.more summary{font-size:.8rem;color:var(--muted);cursor:pointer}
+details.more ul{margin:6px 0 0;padding-left:18px;font-size:.84rem}
+.item.p1{border-left:4px solid var(--danger)}
+.item.p2{border-left:4px solid var(--pop)}
+.item.dim{opacity:.55}
+.decide{list-style:none;margin:0;padding:0;display:grid;gap:8px;counter-reset:d}
+.decide li{display:grid;grid-template-columns:30px 1fr;gap:10px;align-items:start;background:var(--sunk);border-radius:12px;padding:10px 12px;cursor:pointer}
+.decide li::before{counter-increment:d;content:counter(d);width:28px;height:28px;border-radius:999px;display:grid;place-items:center;font:800 .9rem var(--f-display);background:var(--fg);color:var(--bg)}
+.decide b{display:block;font-size:.92rem;line-height:1.35;overflow-wrap:anywhere}
+.decide small{display:flex;gap:6px;flex-wrap:wrap;align-items:center;color:var(--muted);font-size:.76rem;margin-top:4px}
+.pchip{font:700 .7rem var(--f-mono);border-radius:6px;padding:1px 6px}
+.pchip.P1{background:var(--danger);color:#fff}.pchip.P2{background:var(--pop);color:#1c2419}.pchip.P3{background:var(--accent-soft);color:var(--accent)}
+.seg{display:inline-flex;background:var(--sunk);border-radius:999px;padding:3px}
+.seg button{border:0;background:none;border-radius:999px;padding:5px 12px;font-size:.8rem;font-weight:600;color:var(--muted);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgb(0 0 0/.12)}
+.install{display:flex;gap:12px;align-items:center}
+/* selecteren en verwijderen */
+.selbar{display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap}
+.tester.sel{outline:2.5px solid var(--accent);outline-offset:-1px}
+.tester .ck{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);display:grid;place-items:center;flex:none;font:800 .8rem var(--f-display);color:var(--accent-fg)}
+.tester.sel .ck{background:var(--accent);border-color:var(--accent)}
+.actbar{position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:21;background:var(--fg);color:var(--bg);border-radius:16px;padding:10px 12px;display:flex;gap:8px;align-items:center;box-shadow:0 8px 24px -8px rgb(0 0 0/.5)}
+.actbar .spacer{flex:1}
+.actbar .btn{background:transparent;color:var(--bg);border-color:color-mix(in srgb,var(--bg) 35%,transparent)}
+.actbar .btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+@media (min-width:760px){.actbar{left:50%;right:auto;transform:translateX(-50%);width:520px;bottom:96px}}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn.ghostd{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,var(--line))}
+.modal-back{position:fixed;inset:0;background:rgb(0 0 0/.45);z-index:40}
+.modal{position:fixed;left:0;right:0;bottom:0;z-index:41;background:var(--surface);border-radius:20px 20px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom));display:grid;gap:12px;max-height:88vh;overflow:auto}
+@media (min-width:760px){.modal{left:50%;right:auto;bottom:auto;top:50%;transform:translate(-50%,-50%);width:480px;border-radius:20px}}
+.modal h2{font-size:1.2rem}
+.opt{display:grid;grid-template-columns:22px 1fr;gap:10px;align-items:start;border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer}
+.opt input{margin:3px 0 0;accent-color:var(--danger)}
+.opt b{display:block}
+.opt small{color:var(--muted);font-size:.8rem}
+.who-list{font-size:.86rem;color:var(--muted);margin:0}
+.toast .undo{margin-left:10px;background:none;border:0;color:var(--pop);font-weight:800;cursor:pointer;padding:0}
+.install img{width:44px;height:44px;border-radius:11px;flex:none}
+.install p{margin:0;font-size:.86rem;flex:1}
+section.pane{display:grid;gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.card h2{font-size:1.05rem;margin-bottom:10px}
+.sub{color:var(--muted);font-size:.84rem;margin:0}
+.muted{color:var(--muted)}
+.mono{font-family:var(--f-mono);font-size:.8rem}
+.grid2{display:grid;gap:16px}
+@media (min-width:760px){.grid2{grid-template-columns:1fr 1fr}}
+
+/* kerncijfers */
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:760px){.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;min-width:0}
+.kpi b{display:block;font:800 1.9rem/1.1 var(--f-display);letter-spacing:-.02em}
+.kpi span{font-size:.8rem;color:var(--muted);display:block}
+.kpi .lbl{font-size:.82rem;font-weight:600;color:var(--fg)}
+.kpi.alert{border-color:var(--danger);background:var(--danger-soft)}
+.kpi.alert b{color:var(--danger)}
+
+/* staafdiagram activiteit per dag */
+.bars{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:2px;align-items:end;height:120px;padding-top:18px;position:relative}
+.bars .b{position:relative;height:100%;display:flex;align-items:flex-end;cursor:default}
+.bars .b i{display:block;width:100%;background:var(--accent);border-radius:4px 4px 0 0;min-height:0}
+.bars .b.zero i{background:var(--line);height:2px!important;border-radius:1px}
+.bars .b:hover i,.bars .b.on i{filter:brightness(1.15)}
+.axis{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:2px;font:500 .66rem var(--f-mono);color:var(--muted);margin-top:4px;border-top:1px solid var(--line);padding-top:4px}
+.axis span{text-align:center;white-space:nowrap;overflow:hidden}
+.tip{position:absolute;pointer-events:none;background:var(--fg);color:var(--bg);font-size:.78rem;padding:5px 8px;border-radius:8px;white-space:nowrap;transform:translate(-50%,-100%);z-index:5}
+
+/* lijst met aandachtspunten */
+.attn{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.attn li{display:flex;gap:10px;align-items:flex-start;font-size:.9rem}
+.attn .ic{flex:none;width:22px;height:22px;border-radius:999px;display:grid;place-items:center;font-size:.75rem;background:var(--pop-soft);color:var(--pop)}
+.attn .ic.bad{background:var(--danger-soft);color:var(--danger)}
+.attn .ic.ok{background:var(--accent-soft);color:var(--accent)}
+
+/* testers */
+.testers{display:grid;gap:10px}
+@media (min-width:760px){.testers{grid-template-columns:1fr 1fr}}
+.tester{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:grid;gap:10px;cursor:pointer;text-align:left;width:100%}
+.tester:hover{border-color:var(--accent)}
+.th{display:flex;align-items:center;gap:10px}
+.av{flex:none;width:38px;height:38px;border-radius:999px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font:800 1rem var(--f-display)}
+.th .nm{font-weight:700;line-height:1.2}
+.th .nm small{display:block;font:500 .72rem var(--f-mono);color:var(--muted)}
+.chip{display:inline-block;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--sunk);color:var(--muted);white-space:nowrap}
+.chip.bad{background:var(--danger-soft);color:var(--danger)}
+.chip.warn{background:var(--pop-soft);color:var(--pop)}
+.chip.ok{background:var(--accent-soft);color:var(--accent)}
+.strip{display:grid;grid-template-columns:repeat(14,1fr);gap:3px}
+.strip i{height:14px;border-radius:3px;background:var(--sunk)}
+.strip i.on{background:var(--accent)}
+.strip i.today{outline:1.5px solid var(--muted);outline-offset:1px}
+.strip-lbl{display:flex;justify-content:space-between;font:500 .66rem var(--f-mono);color:var(--muted);margin-top:-6px}
+.nums{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.84rem;color:var(--muted)}
+.nums b{color:var(--fg);font-weight:700}
+
+/* trechter per recept */
+.funnel{display:grid;gap:5px;margin-top:6px}
+.fr{display:grid;grid-template-columns:minmax(0,9.5em) 1fr 2.2em;gap:8px;align-items:center;font-size:.82rem}
+.fr .l{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.fr .t{height:16px;background:var(--sunk);border-radius:4px;overflow:hidden}
+.fr .t i{display:block;height:100%;background:var(--accent);border-radius:0 4px 4px 0}
+.fr .v{font:500 .78rem var(--f-mono);text-align:right}
+.fr.drop .l{color:var(--danger);font-weight:600}
+.fr.drop .v{color:var(--danger)}
+.tl li.e.good span{color:var(--accent);font-weight:600}
+.stats3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.stats3 div{background:var(--sunk);border-radius:10px;padding:8px 10px}
+.stats3 b{display:block;font:800 1.15rem var(--f-display)}
+.stats3 span{font-size:.74rem;color:var(--muted)}
+.notes{margin:8px 0 0;padding:0;list-style:none;display:grid;gap:6px;font-size:.86rem}
+.notes li{border-left:3px solid var(--line);padding-left:10px}
+.notes small{color:var(--muted)}
+
+/* feedback */
+.filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.f{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px;font-size:.84rem;font-weight:600;cursor:pointer}
+.f[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.f small{font:500 .72rem var(--f-mono);opacity:.75;margin-left:3px}
+select.f{appearance:none;padding-right:26px;background:var(--surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%235d6b57" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>') no-repeat right 8px center/14px}
+.feed{display:grid;gap:10px}
+.item{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:grid;gap:6px}
+.item.bug{border-left:4px solid var(--danger)}
+.item.done{opacity:.6}
+.ih{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;font-size:.82rem;min-width:0}
+.ih>*{flex-shrink:0;white-space:nowrap}
+.ih .who,.ih .shrink{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ih .who{font-weight:700;flex-shrink:1;min-width:3em}
+.ih .shrink{flex-shrink:2}   /* labels geven het eerst ruimte op, de naam pas daarna (min. ±3 letters); soort, tijd en ster blijven heel */
+.ih .when{color:var(--muted);margin-left:auto}
+.msg{font-size:.95rem;white-space:pre-wrap;overflow-wrap:anywhere}
+.where{font-size:.78rem;color:var(--muted)}
+details.stack summary{font-size:.78rem;color:var(--muted);cursor:pointer}
+details.stack pre{font:500 .72rem/1.5 var(--f-mono);white-space:pre-wrap;overflow-wrap:anywhere;background:var(--sunk);padding:8px;border-radius:8px;margin:6px 0 0}
+.ia{display:flex;gap:6px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;font-weight:600;font-size:.86rem;cursor:pointer;white-space:nowrap}
+.btn.sm{padding:4px 10px;font-size:.78rem}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.btn:active{transform:scale(.97)}
+.empty{text-align:center;color:var(--muted);padding:28px 12px;font-size:.9rem}
+
+/* tester-detail */
+.back{display:inline-flex;align-items:center;gap:4px;border:0;background:none;color:var(--muted);font-weight:600;padding:0;cursor:pointer}
+.tl{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.tl .day{font:600 .78rem var(--f-mono);color:var(--muted);margin:10px 0 4px}
+.tl li.e{display:grid;grid-template-columns:3.2em 1fr;gap:8px;font-size:.86rem;padding:3px 0;border-bottom:1px dashed var(--line)}
+.tl li.e time{font:500 .76rem var(--f-mono);color:var(--muted)}
+.tl li.e.bad{color:var(--danger)}
+
+/* uitnodigen */
+.inv{display:grid;gap:16px;align-items:start}
+@media (min-width:760px){.inv{grid-template-columns:1fr 280px}}
+.qr{background:#fff;border-radius:16px;padding:16px;display:grid;place-items:center;border:1px solid var(--line)}
+.qr svg{width:100%;max-width:240px;height:auto;display:block}
+.qr p{margin:10px 0 0;color:#1c2419;font:700 .95rem var(--f-display);text-align:center}
+.qr p small{display:block;font:500 .72rem var(--f-mono);color:#5d6b57}
+.field{display:grid;gap:4px}
+.field label{font-weight:600;font-size:.86rem}
+.field input{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:1rem;width:100%}
+.link{font:500 .82rem var(--f-mono);background:var(--sunk);border-radius:10px;padding:10px 12px;overflow-wrap:anywhere}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:.88rem;font-weight:600;z-index:40;max-width:92vw}
+.demo-banner{background:var(--pop-soft);color:var(--fg);border-radius:10px;padding:8px 12px;font-size:.84rem}
+table.tbl{width:100%;border-collapse:collapse;font-size:.84rem}
+table.tbl th{text-align:left;font-weight:600;color:var(--muted);border-bottom:1px solid var(--line);padding:4px 6px}
+table.tbl td{border-bottom:1px solid var(--line);padding:5px 6px}
+table.tbl td.n{text-align:right;font-family:var(--f-mono)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="row">
+      <div class="brand">Proefkeuken<small id="ver">Testoverzicht · alpha</small></div>
+      <span class="spacer"></span>
+      <div class="upd" id="upd"></div>
+      <button class="iconbtn" id="reload" type="button" aria-label="Vernieuwen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+    </div>
+  </div>
+</header>
+<nav class="bnav" role="tablist" id="tabs" aria-label="Onderdelen"></nav>
+<main class="wrap" id="main"><p class="empty">Laden…</p></main>
+<div class="toast" id="toast" hidden></div>
+<script src="vendor/qrcode.js"></script>
+<script>
+(() => {
+'use strict';
+/* ---------- instellingen: sleutel + web-app-URL uit de link (#k=…&u=…), daarna lokaal bewaard ---------- */
+const LS = 'cbtb-dash';
+const lsGet = () => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch(e) { return {}; } };
+const lsSet = v => { try { localStorage.setItem(LS, JSON.stringify({ ...lsGet(), ...v })); } catch(e) {} };
+const hp = new URLSearchParams(location.hash.slice(1));
+if (hp.get('k') && hp.get('u')) { lsSet({ key: hp.get('k'), url: hp.get('u') }); }
+const DEMO = new URLSearchParams(location.search).has('demo');
+let tab = hp.get('tab') || lsGet().tab || 'overzicht';
+try { history.replaceState(null, '', location.pathname + location.search + '#tab=' + tab); } catch(e) {}   // sleutel uit de adresbalk
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
+const toast = m => { const t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2200); };
+const DAY = 864e5;
+const dayKey = d => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; };
+const ago = iso => { if (!iso) return '–'; const s = (Date.now() - Date.parse(iso)) / 1000; if (s < 60) return 'net'; if (s < 3600) return Math.floor(s/60) + ' min geleden'; if (s < 86400) return Math.floor(s/3600) + ' uur geleden'; const d = Math.floor(s/86400); return d === 1 ? 'gisteren' : d + ' dagen geleden'; };
+const fmtTime = iso => new Date(iso).toLocaleTimeString('nl-NL', { hour:'2-digit', minute:'2-digit' });
+const fmtDay = iso => new Date(iso).toLocaleDateString('nl-NL', { weekday:'short', day:'numeric', month:'short' });
+const initial = n => (n || '?').trim().charAt(0).toUpperCase();
+const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+const nl1 = x => x == null ? '–' : x.toFixed(1).replace('.', ',');
+// extra event fields (proef, m, tip, a, via) arrive as JSON in the Details column
+const det = e => { if (e.details && typeof e.details === 'object') return e.details; try { return JSON.parse(e.details || '{}') || {}; } catch (x) { return {}; } };
+const isProef = e => !!det(e).proef;   // clicked through during a proefrit (onboarding): not real cooking
+// onboarding missions, in order (same ids as ONBOARDING.missions in the app)
+const MISSIONS = [['proefrit', 'Proefrit'], ['feedback', 'Feedback gegeven'], ['koken', 'Echt gekookt']];
+
+let data = null, recipes = [], view = { tester: null, ff: 'open', ft: '' }, loading = false;
+
+/* ---------- gegevens ophalen ----------
+   Eerst gewoon fetch. Blokkeert de browser dat (adblocker, privacy-extensie, Brave/Edge-bescherming), dan via JSONP:
+   het script geeft dan JavaScript terug in een <script>-tag, waar die blokkade niet voor geldt. */
+let preferJsonp = false;
+function jsonp(full){
+  return new Promise((res, rej) => {
+    const cb = 'cbtb_' + Math.random().toString(36).slice(2), el = document.createElement('script');
+    const done = () => { clearTimeout(t); delete window[cb]; el.remove(); };
+    const t = setTimeout(() => { done(); rej(new Error('geen antwoord (time-out)')); }, 25000);
+    window[cb] = d => { done(); res(d); };
+    el.onerror = () => { done(); rej(new Error('ook de reserve-methode is geblokkeerd')); };
+    el.src = full + '&callback=' + cb; document.head.appendChild(el);
+  });
+}
+async function api(q = ''){
+  const { key, url } = lsGet(), full = `${url}?key=${encodeURIComponent(key)}${q}`;
+  if (!preferJsonp) { try { return await fetch(full, { cache:'no-store' }).then(r => r.json()); } catch(e) { preferJsonp = true; } }
+  return jsonp(full);
+}
+/* Acties (bewaren, status, verwijderen…): alleen gelukt als het script {ok:true} terugstuurt.
+   Een verouderd script kent de actie niet en stuurt gewoon alle data terug: dat is NIET gelukt. */
+const NEED_API = 4;   // d6: Linear-koppeling (script s7)
+const oldScript = () => !DEMO && data && !(Number(data.api) >= NEED_API);
+/* Versies: DASH_VERSION = dit dashboard (ophogen bij elke wijziging), LATEST_SCRIPT = nieuwste Code.gs in de repo.
+   Het script stuurt zijn eigen nummer mee (SCRIPT_VERSION); scripts van vóór s4 hebben dat nog niet. */
+const DASH_VERSION = 'd6', LATEST_SCRIPT = 's7';
+const scriptVer = () => !data ? '' : data.script ? String(data.script) : Number(data.api) >= 3 ? 's3' : 'oud';
+const vnum = v => parseInt(String(v).replace(/\D/g, ''), 10) || 0;
+function renderVersion(){
+  const el = $('ver'); if (!el) return;
+  if (DEMO || !data) { el.textContent = 'Dashboard ' + DASH_VERSION; el.title = ''; return; }
+  const sv = scriptVer(), behind = vnum(sv) < vnum(LATEST_SCRIPT);
+  el.innerHTML = 'Dashboard ' + DASH_VERSION + ' · Script <span style="' + (behind ? 'color:var(--pop);font-weight:600' : '') + '">' + esc(sv) + (behind ? ' → ' + LATEST_SCRIPT : '') + '</span>';
+  el.title = behind ? 'Er is een nieuwere Code.gs (' + LATEST_SCRIPT + '). Plak hem in Apps Script en implementeer een nieuwe versie met beschrijving ' + LATEST_SCRIPT + '.' : 'Script is up-to-date';
+}
+async function act(q){
+  const j = await api(q);
+  if (j && j.ok) return j;
+  if (j && j.error && !/^Onbekende actie/.test(j.error)) throw new Error(j.error);
+  if (data) data.api = 0;                                   // laat de waarschuwing bovenaan zien
+  throw new Error('script verouderd, zie bovenaan');
+}
+// de web-app waar de app (testkit.js) naartoe stuurt; wijkt die af van wat dit dashboard leest, dan komt niets binnen
+let appEndpoint = null;
+const idOf = u => (String(u || '').match(/\/s\/([\w-]+)\/exec/) || [])[1] || '';
+const failed = e => { toast('Niet opgeslagen: ' + (e.message || 'probeer het opnieuw')); setTimeout(load, 300); };   // scherm terug naar wat er echt in de Sheet staat
+async function load(){
+  if (loading) return; loading = true; $('reload').classList.add('spin');
+  try {
+    if (!recipes.length) recipes = await fetch('recipes.json', { cache:'no-store' }).then(r => r.ok ? r.json() : []).then(j => j.recipes || j).catch(() => []);
+    if (appEndpoint === null) appEndpoint = await fetch('testkit.js', { cache:'no-store' }).then(r => r.ok ? r.text() : '').then(t => (t.match(/"endpoint":\s*"([^"]+)"/) || [])[1] || '').catch(() => '');
+    if (DEMO) data = demoData();
+    else {
+      const { key, url } = lsGet();
+      if (!key || !url) { data = null; renderSetup(); return; }
+      let j;
+      try { j = await api(); }
+      catch(e) { throw new Error('ophalen: ' + e.message); }
+      if (j.error) { renderSetup(j.error); return; }
+      data = j;
+    }
+    try { render(); } catch(e) { console.error(e); throw new Error('tonen: ' + e.message); }
+  } catch(e) {
+    $('upd').textContent = 'Mislukt';
+    const why = String(e.message || e);
+    if (!data || why.startsWith('tonen')) renderSetup(why.startsWith('tonen') ? 'Gegevens opgehaald, maar het dashboard liep vast (' + why + '). Stuur deze melding naar Claude.' : 'Kon de gegevens niet ophalen (' + why + '). Klopt de web-app-URL, staat Toegang op "Iedereen" en is de nieuwste versie geïmplementeerd?');
+  }
+  finally { loading = false; $('reload').classList.remove('spin'); }
+}
+$('reload').onclick = load;
+setInterval(() => { if (document.visibilityState === 'visible') load(); }, 60000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && data && Date.now() - Date.parse(data.generated) > 60000) load(); });
+
+/* ---------- afgeleide cijfers ---------- */
+function derive(){
+  const ev = data.events || [], ts = data.testers || [], fb = data.feedback || [], er = data.fouten || [], ss = data.sessies || [];
+  const byT = Object.fromEntries(ts.map(t => [t.id, { ...t, days: new Set(String(t.dayList || '').split(',').map(x => x.trim()).filter(Boolean).map(x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : isNaN(new Date(x)) ? '' : dayKey(x)).filter(Boolean)), started: 0, finished: 0, proef: 0, fb: 0, bugs: 0, stars: [], missions: new Set(), tipsOff: false }]));
+  for (const e of ev) { const t = byT[e.tid]; if (!t) continue; t.days.add(dayKey(e.at));
+    if (e.kind === 'kook_start' && !isProef(e)) t.started++;
+    if (e.kind === 'proefrit_klaar') { t.proef++; t.missions.add('proefrit'); }
+    if (e.kind === 'missie') t.missions.add(det(e).m);
+    if (e.kind === 'tip' && det(e).a === 'uit') t.tipsOff = true; }
+  for (const s of ss) { const t = byT[s.tid]; if (!t) continue; t.finished++; t.missions.add('koken'); if (s.rating !== '' && s.rating != null) t.stars.push(+s.rating); }
+  for (const f of fb) { const t = byT[f.tid]; if (t) { t.fb++; t.missions.add('feedback'); if (f.type === 'Werkt niet') t.bugs++; } }
+  for (const f of er) { const t = byT[f.tid]; if (t) t.bugs++; }
+  for (const t of Object.values(byT)) if (t.missions.has('koken')) t.missions.add('proefrit');   // same rule as the app: cooked for real = no proefrit needed
+  const kp = data.bewaard || [], keptBy = new Map(kp.map(k => [String(k.src), k]));
+  const items = [
+    ...fb.map(f => ({ ...f, tab: 'Feedback', id: f.fid, bug: f.type === 'Werkt niet', kept: keptBy.get(String(f.fid)) })),
+    ...er.map(f => ({ ...f, tab: 'Fouten', id: f.eid, type: 'Fout', bug: true, kept: keptBy.get(String(f.eid)) }))
+  ];
+  // bewaarde meldingen waarvan de tester (of de melding) al verwijderd is: blijven zichtbaar
+  const have = new Set(items.map(i => String(i.id)));
+  kp.filter(k => !have.has(String(k.src))).forEach(k => items.push({ ...k, tab: 'Bewaard', id: k.bid, tid: '', bug: k.type === 'Werkt niet' || k.type === 'Fout', kept: k, orphan: true }));
+  items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  // eerder besloten: 'niet doen' op een gelijksoortige melding (zelfde soort, scherm, recept)
+  const declined = new Set(items.filter(i => i.status === 'niet doen').map(groupKey));
+  items.forEach(i => { if (isOpen(i) && declined.has(groupKey(i))) i.declinedBefore = true; });
+  return { ev, ss, testers: Object.values(byT).sort((a, b) => String(b.last).localeCompare(String(a.last))), items, byT, groups: groups(items) };
+}
+
+/* ---------- prioriteren ----------
+   Voorstel-prioriteit per soort (P1 blokkeert, P2 hindert, P3 later); Wes past het met één tik aan.
+   Gelijksoortige meldingen (zelfde soort, scherm en recept) vormen één groep: hoe meer testers, hoe hoger. */
+const AUTO_P = { 'Fout': 'P1', 'Werkt niet': 'P1', 'Snap ik niet': 'P2', 'Idee': 'P3', 'Mooi': 'P3' };
+const STATUS = [['nieuw', 'Nieuw'], ['gepland', 'Gepland'], ['opgelost', 'Opgelost'], ['niet doen', 'Niet doen']];
+const isOpen = i => !['opgelost', 'niet doen'].includes(i.status || 'nieuw');
+/* d6: Linear. linear = issue-ID (PK-21), linearState = kolom in Linear; het script (s7) vult beide en zet de status.
+   "Gekopieerd" onthoudt dit apparaat 24 uur (wacht op de koppeling), zodat je niets dubbel naar Claude stuurt. */
+const COPY_TTL = 864e5;
+const copiedMap = () => { const c = lsGet().copied || {}, now = Date.now(); return Object.fromEntries(Object.entries(c).filter(([, t]) => now - t < COPY_TTL)); };
+const linOf = i => i.linear || i.kept?.linear || '';
+const isPending = i => !linOf(i) && !!copiedMap()[String(i.id)];
+const canCopy = i => !linOf(i) && !isPending(i) && !i.orphan;
+const LIN_IC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>';
+function linChip(i){
+  const id = linOf(i); if (!id) return '';
+  const base = data?.linear?.base || 'https://linear.app/cooking-by-the-book', st = i.linearState || '';
+  const cls = /^(klaar|niet doen|duplicate)$/i.test(st) ? (st.toLowerCase() === 'klaar' ? 'done' : 'no') : '';
+  return `<a class="lin ${cls}" href="${esc(base)}/issue/${encodeURIComponent(id)}" target="_blank" rel="noopener" title="Openen in Linear">${LIN_IC}${esc(id)}${st ? ' · ' + esc(st) : ''}</a>`;
+}
+const prioOf = i => i.prio || AUTO_P[i.type] || 'P2';
+const groupKey = i => [i.type === 'Fout' ? 'F:' + String(i.message).slice(0, 60) : i.type, String(i.screen || '').replace(/\s*\(.*\)$/, ''), i.rid || ''].join('|');
+function groups(items){
+  const g = new Map();
+  for (const i of items.filter(isOpen)) { const k = groupKey(i); if (!g.has(k)) g.set(k, { key: k, items: [], testers: new Set() }); const x = g.get(k); x.items.push(i); x.testers.add(i.tid); }
+  for (const x of g.values()) {
+    x.lead = x.items[0];                                   // nieuwste (items zijn al op tijd gesorteerd)
+    x.prio = x.items.map(prioOf).sort()[0];                // hoogste prioriteit in de groep
+    const age = (Date.now() - Date.parse(x.lead.at)) / 864e5;
+    x.score = { P1: 100, P2: 50, P3: 15 }[x.prio] + 20 * (x.testers.size - 1) + 5 * (x.items.length - 1) + (x.items.some(i => i.status === 'gepland') ? 10 : 0) - Math.min(age, 14);
+  }
+  return [...g.values()].sort((a, b) => b.score - a.score);
+}
+
+/* ---------- opbouw ---------- */
+const NAV_IC = {
+  overzicht: '<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 4v4h6V4z"/>',
+  feedback: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+  testers: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.6.8 2.6 2.6 3 5.2"/>',
+  recepten: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5M9 7h6"/>',
+  uitnodigen: '<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/>'
+};
+const TABS = [['overzicht', 'Overzicht'], ['feedback', 'Feedback'], ['testers', 'Testers'], ['recepten', 'Recepten'], ['uitnodigen', 'Uitnodigen']];
+function renderTabs(openBugs){
+  $('tabs').innerHTML = TABS.map(([k, l]) => `<button role="tab" type="button" data-tab="${k}" aria-selected="${k === tab}"><span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NAV_IC[k]}</svg></span>${l}${k === 'feedback' && openBugs ? `<span class="n" aria-label="${openBugs} open P1">${openBugs}</span>` : ''}</button>`).join('');
+  $('tabs').querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; view.tester = null; lsSet({ tab }); try { history.replaceState(null, '', '#tab=' + tab); } catch(e) {} render(); window.scrollTo(0, 0); });
+}
+function render(){
+  const d = derive();
+  const openBugs = d.groups.filter(g => g.prio === 'P1').length;
+  renderTabs(openBugs); renderVersion();
+  $('upd').innerHTML = DEMO ? 'voorbeelddata' : 'bijgewerkt<br>' + fmtTime(data.generated);
+  const m = $('main');
+  const stale = oldScript() ? '<p class="demo-banner" style="background:var(--danger-soft)"><b>Opslaan werkt nog niet:</b> je Sheet draait een oude versie van het script (' + esc(scriptVer()) + ', nodig: ' + LATEST_SCRIPT + '). Bewaren (★), status, prioriteit en verwijderen worden dan niet opgeslagen. Oplossen: Sheet → Extensies → Apps Script → plak de nieuwste Code.gs → opslaan → voer <b>setup</b> uit → Implementeren → Implementaties beheren → potlood → Versie: <b>Nieuwe versie</b>, Beschrijving: <b>' + LATEST_SCRIPT + '</b> → Implementeren. Daarna dit dashboard vernieuwen.</p>' : '';
+  const other = !DEMO && appEndpoint && idOf(appEndpoint) !== idOf(lsGet().url) ? '<p class="demo-banner" style="background:var(--danger-soft)"><b>App en dashboard gebruiken een andere web-app.</b> De app stuurt naar implementatie <b>…' + esc(idOf(appEndpoint).slice(-8)) + '</b>, dit dashboard leest <b>…' + esc(idOf(lsGet().url).slice(-8)) + '</b>. Nieuwe testers en feedback komen dan niet hier binnen. Oplossen: gebruik bij een nieuwe versie altijd Implementaties beheren → potlood (dan blijft de URL gelijk), of stuur Claude de nieuwe /exec-URL.</p>' : '';
+  const banner = stale + other + (DEMO ? '<p class="demo-banner">Je kijkt naar <b>voorbeelddata</b>. Open het dashboard via de link in je Sheet (tabblad Instellingen) voor je echte testers.</p>' : '');
+  m.innerHTML = banner + ({ overzicht, testers: testersPane, recepten, feedback: feedbackPane, uitnodigen }[tab] || overzicht)(d);
+  document.body.classList.toggle('selecting', tab === 'testers' && !!view.sel && view.sel.size > 0);
+  bind(d);
+}
+
+/* Overzicht: vier kerncijfers, actieve testers per dag, aandachtspunten, nieuwste meldingen */
+function overzicht(d){
+  const now = Date.now(), active7 = d.testers.filter(t => t.last && now - Date.parse(t.last) < 7 * DAY).length;
+  const started = d.ev.filter(e => e.kind === 'kook_start' && !isProef(e)).length, done = d.ss.length, proef = d.ev.filter(e => e.kind === 'proefrit_klaar').length;
+  const stars = d.ss.map(s => s.rating).filter(x => x !== '' && x != null).map(Number);
+  const openBugs = d.groups.filter(g => g.prio === 'P1').length;
+  const days = [...Array(14)].map((_, k) => dayKey(now - (13 - k) * DAY));
+  const perDay = days.map(k => d.testers.filter(t => t.days.has(k)).length), max = Math.max(1, ...perDay);
+  const attn = attention(d);
+  return `<section class="pane">
+    <div class="kpis">
+      <div class="kpi"><span class="lbl">Testers</span><b>${d.testers.length}</b><span>${active7} actief deze week</span></div>
+      <div class="kpi"><span class="lbl">Keer gekookt</span><b>${done}</b><span>${started} keer gestart · ${proef} ${proef === 1 ? 'proefrit' : 'proefritten'}</span></div>
+      <div class="kpi"><span class="lbl">Gem. sterren</span><b>${nl1(avg(stars))}</b><span>${stars.length} beoordelingen</span></div>
+      <div class="kpi ${openBugs ? 'alert' : ''}"><span class="lbl">${openBugs ? '⚠ ' : ''}Open P1</span><b>${openBugs}</b><span>${openBugs ? 'blokkeert testers' : 'niets dat blokkeert'}</span></div>
+    </div>
+    ${installCard()}
+    <div class="card"><h2>Beslislijst</h2><p class="sub" style="margin:-4px 0 10px">Top 5 om nu aan te pakken: prioriteit × aantal testers × hoe recent</p>${decideList(d, 5)}</div>
+    ${onboardingCard(d)}
+    <div class="grid2">
+      <div class="card"><h2>Actieve testers per dag</h2><p class="sub">Laatste 14 dagen · tik op een staaf</p>
+        <div class="bars" id="bars">${perDay.map((v, k) => `<div class="b ${v ? '' : 'zero'}" data-tip="${esc(fmtDay(days[k]))}: ${v} ${v === 1 ? 'tester' : 'testers'}"><i style="height:${(v / max * 100).toFixed(1)}%"></i></div>`).join('')}</div>
+        <div class="axis">${days.map((k, i) => `<span>${i % 2 ? '' : +k.slice(8)}</span>`).join('')}</div>
+      </div>
+      <div class="card"><h2>Let op</h2>${attn.length ? `<ul class="attn">${attn.join('')}</ul>` : '<p class="sub">Niets bijzonders. Alles loopt.</p>'}</div>
+    </div>
+  </section>`;
+}
+/* Onboarding: hoeveel testers elke missie haalden (proefrit telt niet als kookbeurt) */
+function onboardingCard(d){
+  const n = d.testers.length; if (!n) return '';
+  const rows = [['Aangemeld', n], ...MISSIONS.map(([id, l]) => [l, d.testers.filter(t => t.missions.has(id)).length])];
+  const all = d.testers.filter(t => MISSIONS.every(([id]) => t.missions.has(id))).length, off = d.testers.filter(t => t.tipsOff).length;
+  return `<div class="card"><h2>Onboarding</h2><p class="sub" style="margin:-4px 0 10px">Missies per tester · ${all} van ${n} alles gehaald${off ? ` · tips uitgezet door ${off}` : ''}</p>
+    <div class="funnel obfunnel" role="table">${rows.map(([l, v], k) => { const lost = k && rows[k-1][1] > v; return `<div class="fr of-row ${lost ? 'drop' : ''}" role="row" title="${esc(l)}: ${v} van ${n}"><span class="l" role="cell">${esc(l)}</span><span class="t" aria-hidden="true"><i style="width:${(v / n * 100).toFixed(1)}%"></i></span><span class="v" role="cell">${v}</span></div>`; }).join('')}</div></div>`;
+}
+function decideList(d, n){
+  const top = d.groups.slice(0, n);
+  if (!top.length) return '<p class="sub">Niets open. Mooi zo.</p>';
+  return `<ol class="decide">${top.map(g => { const r = recipes.find(x => x.id === g.lead.rid);
+    return `<li data-open="${esc(g.key)}"><div><b>${esc(String(g.lead.message).slice(0, 110))}</b><small><span class="pchip ${g.prio}">${g.prio}</span>${TYPE_IC[g.lead.type] || ''} ${esc(g.lead.type)}${g.items.length > 1 ? ` · <span class="dup">×${g.items.length} · ${g.testers.size} ${g.testers.size === 1 ? 'tester' : 'testers'}</span>` : ` · ${esc(g.lead.name)}`}${r ? ' · ' + esc(short(r.title)) : ''}${g.items.some(i => i.status === 'gepland') ? ' · gepland' : ''}</small></div></li>`; }).join('')}</ol>`;
+}
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; if (tab === 'overzicht' && data) render(); });
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+function installCard(){
+  if (standalone() || lsGet().noInstall) return '';
+  const ios = /iphone|ipad/i.test(navigator.userAgent);
+  return `<div class="card install"><img src="icons/dashboard/dash-icon-192.png" alt=""><p><b>Zet het dashboard op je beginscherm</b><br><span class="muted">${installEvt ? 'Opent dan als app, zonder adresbalk.' : ios ? 'Tik op Delen ↑ → Zet op beginscherm.' : 'Chrome-menu ⋮ → App installeren (of Toevoegen aan startscherm).'}</span></p>${installEvt ? '<button class="btn primary sm" type="button" id="do-install">Installeren</button>' : '<button class="btn sm" type="button" id="no-install">Oké</button>'}</div>`;
+}
+function attention(d){
+  const out = [], now = Date.now();
+  const li = (cls, ic, html) => `<li><span class="ic ${cls}" aria-hidden="true">${ic}</span><span>${html}</span></li>`;
+  const bugs = d.items.filter(i => i.bug && isOpen(i));
+  if (bugs.length) out.push(li('bad', '!', `<b>${bugs.length} open ${bugs.length === 1 ? 'bug' : 'bugs'}</b>, nieuwste van ${esc(bugs[0].name)} (${ago(bugs[0].at)})`));
+  for (const t of d.testers) { const s = t.last ? (now - Date.parse(t.last)) / DAY : 99; if (s >= 3) out.push(li('', '…', `<b>${esc(t.name)}</b> is ${Math.floor(s)} dagen niet geweest`)); }
+  for (const r of recipes) {
+    const f = funnel(d, r); if (!f.started) continue;
+    const drop = f.rows.reduce((best, row, k) => k && f.rows[k-1].v - row.v > (best?.lost || 0) ? { lost: f.rows[k-1].v - row.v, at: row.l } : best, null);
+    if (drop && drop.lost) out.push(li('', '↘', `<b>${esc(short(r.title))}</b>: ${drop.lost} ${drop.lost === 1 ? 'tester haakt' : 'testers haken'} af bij “${esc(drop.at)}”`));
+  }
+  const noRide = d.testers.filter(t => t.first && now - Date.parse(t.first) > DAY && !t.missions.has('proefrit'));
+  if (noRide.length) out.push(li('', '…', `Nog geen proefrit: ${noRide.map(t => '<b>' + esc(t.name) + '</b>').join(', ')}`));
+  const late = d.testers.filter(t => t.first && now - Date.parse(t.first) > 5 * DAY && !t.missions.has('koken'));
+  if (late.length) out.push(li('', '⏳', `Nog niet echt gekookt (dag 5+ van 7): ${late.map(t => '<b>' + esc(t.name) + '</b>').join(', ')}`));
+  const fresh = d.testers.filter(t => t.first && now - Date.parse(t.first) < 2 * DAY);
+  if (fresh.length) out.push(li('ok', '+', `Nieuw: ${fresh.map(t => esc(t.name)).join(', ')}`));
+  return out.slice(0, 6);
+}
+
+/* Testers: kaart per tester met 14-dagenstrook; tik voor de tijdlijn */
+function testersPane(d){
+  if (view.tester) return testerDetail(d, d.byT[view.tester]);
+  if (!d.testers.length) return `<div class="card empty">Nog geen testers. Ga naar <b>Uitnodigen</b> en deel je link of QR-code.</div>`;
+  const days = [...Array(14)].map((_, k) => dayKey(Date.now() - (13 - k) * DAY)), sel = view.sel;
+  const bar = `<div class="selbar"><span class="sub">${d.testers.length} ${d.testers.length === 1 ? 'tester' : 'testers'}</span>${sel ? `<span class="row"><button class="btn sm" type="button" id="sel-all">${sel.size === d.testers.length ? 'Niets' : 'Alles'} selecteren</button><button class="btn sm" type="button" id="sel-off">Klaar</button></span>` : '<button class="btn sm" type="button" id="sel-on">Selecteren</button>'}</div>`;
+  const act = sel && sel.size ? `<div class="actbar" role="toolbar"><b>${sel.size} geselecteerd</b><span class="spacer"></span><button class="btn sm danger" type="button" id="sel-del">Verwijderen…</button></div>` : '';
+  return `<section class="pane">${bar}<div class="testers">${d.testers.map(t => {
+    const st = avg(t.stars), quiet = t.last ? (Date.now() - Date.parse(t.last)) / DAY : 99, on = sel && sel.has(t.id);
+    return `<button class="tester ${on ? 'sel' : ''}" type="button" data-tester="${esc(t.id)}" ${sel ? `aria-pressed="${!!on}"` : ''}>
+      <div class="th">${sel ? `<span class="ck" aria-hidden="true">${on ? '✓' : ''}</span>` : ''}<span class="av">${esc(initial(t.name))}</span><span class="nm">${esc(t.name)}<small>${esc(t.id)}</small></span><span class="spacer"></span>${t.group ? `<span class="chip">${esc(t.group)}</span>` : ''}</div>
+      <div class="strip" aria-label="Actief op ${t.days.size} dagen">${days.map((k, i) => `<i class="${t.days.has(k) ? 'on' : ''} ${i === 13 ? 'today' : ''}" title="${esc(fmtDay(k))}"></i>`).join('')}</div>
+      <div class="strip-lbl"><span>14 dagen geleden</span><span>vandaag</span></div>
+      <div class="nums"><span><b>${t.days.size}</b> actieve dagen</span><span><b>${t.finished}</b>/${t.started} keer klaar</span><span><b>${t.missions.size}</b>/${MISSIONS.length} missies</span><span><b>${nl1(st)}</b> ★</span><span><b>${t.fb}</b> feedback</span>${t.bugs ? `<span class="chip bad">⚠ ${t.bugs} bug${t.bugs === 1 ? '' : 's'}</span>` : ''}</div>
+      <div class="nums"><span>Laatst: <b>${ago(t.last)}</b></span>${quiet >= 3 ? '<span class="chip warn">stil</span>' : ''}</div>
+    </button>`; }).join('')}</div>${act}</section>`;
+}
+const KIND = { open:'App geopend', pagina:'Pagina', aanmelding:'Aangemeld', kook_start:'Kookmodus gestart', kook_dicht:'Kookmodus gesloten', klaar:'Klaar met koken', proefrit:'Proefrit gekozen', echt_gekookt:'Toch echt gekookt' };
+function evText(e, r, name){
+  const x = det(e), P = isProef(e) ? 'Proefrit' : '';
+  if (e.kind === 'missie') return `Missie gehaald: ${(MISSIONS.find(m => m[0] === x.m) || [, x.m])[1]}`;
+  if (e.kind === 'tip') return 'Tips uitgezet';
+  if (e.kind === 'proefrit_klaar') return (x.via === 'snel' ? 'Snel doorgetikt, telt als proefrit' : 'Proefrit gehaald') + (name ? ` · ${name}` : '');
+  if (e.kind === 'stap') return `${P ? P + ' ' : ''}${name}: ${stepLabel(r, +e.step, r?.steps?.length || 99)}`;
+  if (e.kind === 'pagina') return e.screen === 'receptpagina' && name ? `Bekijkt ${name}` : `Opent ${e.screen}`;
+  if (P && e.kind === 'kook_start') return `Proefrit gestart${name ? ' · ' + name : ''}`;
+  if (P && e.kind === 'kook_dicht') return `Proefrit gesloten${name ? ' · ' + name : ''}`;
+  return (KIND[e.kind] || e.kind) + (name && e.kind !== 'open' ? ` · ${name}` : '');
+}
+function stepLabel(r, i, n){ if (i === -2) return 'vragen vooraf'; if (i === -1) return 'klaarzetten'; if (i >= n) return 'eindscherm'; return `stap ${i+1}${r?.steps?.[i]?.title ? ' · ' + r.steps[i].title : ''}`; }
+function testerDetail(d, t){
+  if (!t) { view.tester = null; return testersPane(d); }
+  const rec = id => recipes.find(r => r.id === id);
+  const rows = [
+    ...d.ev.filter(e => e.tid === t.id && !(e.kind === 'tip' && det(e).a !== 'uit')).map(e => {
+      const r = rec(e.rid), name = r ? short(r.title) : '';
+      return { at: e.at, txt: esc(evText(e, r, name)), ok: e.kind === 'missie' };
+    }),
+    ...d.items.filter(i => i.tid === t.id).map(i => ({ at: i.at, bad: i.bug, txt: `<b>${esc(i.type)}</b>: ${esc(i.message)}` })),
+    ...d.ss.filter(s => s.tid === t.id && s.rating !== '').map(s => ({ at: s.updated, txt: `★ ${esc(s.rating)} voor ${esc(short(s.title))}${s.chips ? ' · ' + esc(s.chips) : ''}${s.note ? ' · “' + esc(s.note) + '”' : ''}` }))
+  ].filter(x => x.at).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 300);
+  let lastDay = '';
+  return `<section class="pane">
+    <button class="back" type="button" id="back">← Alle testers</button>
+    <div class="card"><div class="th"><span class="av">${esc(initial(t.name))}</span><span class="nm">${esc(t.name)}<small>${esc(t.id)}${t.group ? ' · ' + esc(t.group) : ''}</small></span></div>
+      <div class="stats3"><div><b>${t.days.size}</b><span>actieve dagen</span></div><div><b>${t.finished}</b><span>keer gekookt</span></div><div><b>${nl1(avg(t.stars))}</b><span>gem. sterren</span></div></div>
+      <p class="sub">Missies: ${MISSIONS.map(([id, l]) => `${t.missions.has(id) ? '✓' : '○'} ${esc(l)}`).join(' · ')}${t.proef ? ` · ${t.proef}× proefrit` : ''}${t.tipsOff ? ' · tips uit' : ''}</p>
+      <p class="sub">Eerste keer ${t.first ? fmtDay(t.first) : '–'} · laatst ${ago(t.last)} · ${esc(t.size || '')} · ${esc(String(t.device || '').replace(/\(KHTML.*$/, '').slice(0, 70))}</p>
+      <p class="row" style="margin:10px 0 0"><button class="btn sm" type="button" id="t-feed">Feedback van ${esc(t.name)}</button><button class="btn sm ghostd" type="button" id="t-del" data-id="${esc(t.id)}">Verwijderen…</button></p></div>
+    <div class="card"><h2>Tijdlijn</h2>${rows.length ? `<ul class="tl">${rows.map(x => { const dk = fmtDay(x.at), head = dk !== lastDay ? `<li class="day">${dk}</li>` : ''; lastDay = dk; return head + `<li class="e ${x.bad ? 'bad' : ''} ${x.ok ? 'good' : ''}"><time>${fmtTime(x.at)}</time><span>${x.txt}</span></li>`; }).join('')}</ul>` : '<p class="sub">Nog niets gedaan.</p>'}</div>
+  </section>`;
+}
+
+/* Recepten: trechter (hoeveel testers bereiken elk scherm) + kooktijd, sterren, chips en notities */
+const short = t => String(t || '').replace(/ met .*$/, '');
+function funnel(d, r){
+  const n = (r.steps || []).length, reached = new Map();
+  const add = (k, tid) => { if (!reached.has(k)) reached.set(k, new Set()); reached.get(k).add(tid); };
+  for (const e of d.ev) if (e.rid === r.id && !isProef(e)) {
+    if (e.kind === 'pagina' && e.screen === 'receptpagina') add('view', e.tid);
+    if (e.kind === 'kook_start') add('start', e.tid);
+    if (e.kind === 'stap') { const i = +e.step; add(i >= n ? 'end' : i < 0 ? 'prep' : 's' + i, e.tid); }
+  }
+  for (const s of d.ss) if (s.rid === r.id) add('end', s.tid);
+  // wie een latere stap haalde, heeft de eerdere ook gehad (kan stappen overslaan of halverwege instappen)
+  const order = ['view', 'start', ...[...Array(n)].map((_, i) => 's' + i), 'end'];
+  for (let k = order.length - 2; k >= 0; k--) for (const tid of reached.get(order[k + 1]) || []) add(order[k], tid);
+  const v = k => reached.get(k)?.size || 0;
+  const rows = [{ l: 'Recept bekeken', v: v('view') }, { l: 'Kookmodus gestart', v: v('start') }, ...(r.steps || []).map((s, i) => ({ l: `${i+1}. ${s.title || 'Stap'}`, v: v('s' + i) })), { l: 'Eindscherm', v: v('end') }];
+  return { rows, started: v('start'), viewed: v('view') };
+}
+function recepten(d){
+  if (!recipes.length) return '<div class="card empty">Geen recepten gevonden (recipes.json ontbreekt).</div>';
+  return `<section class="pane">${recipes.map(r => {
+    const f = funnel(d, r), max = Math.max(1, f.viewed), ss = d.ss.filter(s => s.rid === r.id);
+    const mins = ss.map(s => s.min).filter(x => x !== '' && x != null).map(Number), stars = ss.map(s => s.rating).filter(x => x !== '' && x != null).map(Number);
+    const chips = {}; ss.forEach(s => String(s.chips || '').split(', ').filter(Boolean).forEach(c => chips[c] = (chips[c] || 0) + 1));
+    const notes = ss.filter(s => s.note).sort((a, b) => String(b.updated).localeCompare(String(a.updated)));
+    const am = avg(mins);
+    return `<div class="card"><h2>${esc(r.title)}</h2><p class="sub">${esc(r.variant || '')}${r.variant ? ' · ' : ''}recepttijd ${r.minutes || '–'} min</p>
+      <div class="stats3"><div><b>${ss.length}</b><span>keer gekookt</span></div><div><b>${am == null ? '–' : Math.round(am) + ' min'}</b><span>gem. kooktijd${am != null && r.minutes ? ' (' + (am - r.minutes >= 0 ? '+' : '−') + Math.abs(Math.round(am - r.minutes)) + ')' : ''}</span></div><div><b>${nl1(avg(stars))}</b><span>gem. sterren</span></div></div>
+      ${f.viewed ? `<p class="sub">Hoeveel testers elk scherm bereikten</p><div class="funnel" role="table">${f.rows.map((row, k) => { const lost = k && f.rows[k-1].v > row.v; return `<div class="fr ${lost ? 'drop' : ''}" role="row" title="${esc(row.l)}: ${row.v}${lost ? ' (' + (f.rows[k-1].v - row.v) + ' afgehaakt)' : ''}"><span class="l" role="cell">${esc(row.l)}</span><span class="t" aria-hidden="true"><i style="width:${(row.v / max * 100).toFixed(1)}%"></i></span><span class="v" role="cell">${row.v}</span></div>`; }).join('')}</div>` : '<p class="sub">Nog niet bekeken door testers.</p>'}
+      ${Object.keys(chips).length ? `<p class="sub" style="margin-top:12px">Chips</p><div class="filters" style="margin-top:4px">${Object.entries(chips).sort((a, b) => b[1] - a[1]).map(([c, n]) => `<span class="chip">${esc(c)} ×${n}</span>`).join('')}</div>` : ''}
+      ${notes.length ? `<p class="sub" style="margin-top:12px">Notities</p><ul class="notes">${notes.slice(0, 8).map(s => `<li>${esc(s.note)} <small>— ${esc(s.name)}${s.rating !== '' ? ', ' + esc(s.rating) + '★' : ''}</small></li>`).join('')}</ul>` : ''}
+    </div>`; }).join('')}</section>`;
+}
+
+/* Feedback en fouten: één tijdlijn, filters, opgelost markeren, kopiëren voor Claude */
+const TYPE_IC = { 'Werkt niet': '🐞', 'Fout': '⚠', 'Snap ik niet': '?', 'Idee': '💡', 'Mooi': '♥' };
+function itemHtml(i, g){
+  const r = recipes.find(x => x.id === i.rid), open = isOpen(i), p = prioOf(i), ref = esc(i.tab) + '|' + esc(i.id), k = i.kept;
+  return `<article class="item ${open ? p.toLowerCase() : 'dim'}" id="it-${esc(i.id)}">
+    <div class="ih"><span class="chip ${i.bug ? 'bad' : i.type === 'Mooi' ? 'ok' : i.type === 'Snap ik niet' ? 'warn' : ''}">${TYPE_IC[i.type] || ''} ${esc(i.type)}</span><span class="who">${esc(i.name)}</span>${i.orphan ? '<span class="chip shrink" title="Tester verwijderd">verwijderd</span>' : ''}${i.declinedBefore ? '<span class="chip warn shrink" title="Eerder besloten: niet doen">eerder: niet doen</span>' : ''}${isPending(i) ? '<span class="chip pend" title="Gekopieerd voor Claude; de Linear-kaart verschijnt hier zodra hij is aangemaakt">gekopieerd</span>' : ''}${g && g.items.length > 1 ? `<span class="dup shrink">×${g.items.length} · ${g.testers.size} ${g.testers.size === 1 ? 'tester' : 'testers'}</span>` : ''}<span class="when" title="${esc(new Date(i.at).toLocaleString('nl-NL'))}">${ago(i.at).replace(' geleden', '')}</span><button class="star" type="button" data-keep="${ref}" aria-pressed="${!!k}" aria-label="${k ? 'Niet meer bewaren' : 'Bewaren'}" title="${k ? 'Bewaard' : 'Bewaren'}">${k ? '★' : '☆'}</button></div>
+    <div class="msg">${esc(i.message)}</div>
+    <div class="where">${esc(i.screen || '')}${r ? ' · ' + esc(short(r.title)) : ''}${i.source ? ' · ' + esc(i.source) : ''}</div>
+    ${g && g.items.length > 1 ? `<details class="more"><summary>Ook gemeld door ${esc([...new Set(g.items.slice(1).map(x => x.name))].join(', '))}</summary><ul>${g.items.slice(1).map(x => `<li>${esc(x.message)} <span class="muted">— ${esc(x.name)}, ${ago(x.at)}</span></li>`).join('')}</ul></details>` : ''}
+    ${i.stack ? `<details class="stack"><summary>Technische details</summary><pre>${esc(i.stack)}\n\n${esc(i.device || '')} · ${esc(i.version || '')}</pre></details>` : ''}
+    <div class="ia"><span class="prio ${i.prio ? '' : 'auto'}" role="group" aria-label="Prioriteit">${['P1', 'P2', 'P3'].map(x => `<button type="button" data-p="${x}" data-setprio="${ref}|${x}" aria-pressed="${p === x}">${x}</button>`).join('')}</span>
+      ${linOf(i) ? linChip(i) : `<select class="st" data-setstatus="${ref}" aria-label="Status">${STATUS.map(([k, l]) => `<option value="${k}" ${(i.status || 'nieuw') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`}
+      ${i.prio ? '' : '<span class="hint">voorstel</span>'}</div>
+    ${k ? `<input class="knote" data-note="${esc(k.bid)}" value="${esc(k.note || '')}" placeholder="Notitie (bv. fixen in v51)" maxlength="500" aria-label="Notitie">` : ''}
+  </article>`;
+}
+const FF = [['open', 'Open'], ['nietlinear', 'Nog niet in Linear'], ['linear', 'In Linear'], ['gepland', 'Gepland'], ['bewaard', '★ Bewaard'], ['niet doen', 'Niet doen'], ['opgelost', 'Opgelost'], ['alles', 'Alles'], ['Werkt niet', '🐞 Werkt niet'], ['Fout', '⚠ Fouten'], ['Snap ik niet', '? Snap ik niet'], ['Idee', '💡 Idee'], ['Mooi', '♥ Mooi']];
+const matchF = (i, k) => k === 'alles' || (k === 'open' ? isOpen(i) : k === 'linear' ? !!linOf(i) : k === 'nietlinear' ? isOpen(i) && !linOf(i) : k === 'bewaard' ? !!i.kept : ['gepland', 'niet doen', 'opgelost'].includes(k) ? (i.status || 'nieuw') === k : i.type === k);
+function filtered(d){
+  return d.items.filter(i => matchF(i, view.ff) && (!view.ft || i.tid === view.ft));
+}
+function feedbackPane(d){
+  const list = filtered(d), byPrio = (view.sort || 'prio') === 'prio';
+  const count = k => d.items.filter(i => matchF(i, k) && (!view.ft || i.tid === view.ft)).length;
+  let body;
+  if (byPrio) {   // één kaart per groep, hoogste score eerst; gesloten meldingen onderaan
+    const gs = d.groups.filter(g => g.items.some(i => list.includes(i)));
+    const closed = list.filter(i => !isOpen(i));
+    body = gs.map(g => itemHtml(g.lead, g)).join('') + closed.map(i => itemHtml(i)).join('');
+  } else body = list.map(i => itemHtml(i)).join('');
+  return `<section class="pane">
+    <div class="filters">${FF.map(([k, l]) => `<button class="f" type="button" data-ff="${esc(k)}" aria-pressed="${view.ff === k}">${l}<small>${count(k)}</small></button>`).join('')}
+      <select class="f" id="ft" aria-label="Tester"><option value="">Alle testers</option>${d.testers.map(t => `<option value="${esc(t.id)}" ${view.ft === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
+    <div class="row" style="align-items:center;justify-content:space-between"><span class="seg" role="group" aria-label="Sorteren"><button type="button" data-sort="prio" aria-pressed="${byPrio}">Prioriteit</button><button type="button" data-sort="new" aria-pressed="${!byPrio}">Nieuwste</button></span>
+      ${(() => { const n = list.filter(canCopy).length, inL = list.filter(i => linOf(i)).length, pend = list.filter(isPending).length;
+        return `<button class="btn primary sm" type="button" id="copy-claude" ${n ? '' : 'disabled'} title="${inL} al in Linear${pend ? ', ' + pend + ' gekopieerd' : ''}">${n ? `Kopieer ${n} nieuwe voor Claude` : list.length ? 'Alles al naar Claude' : 'Niets te kopiëren'}</button>`; })()}</div>
+    ${linBar()}
+    ${body ? `<div class="feed">${body}</div>` : '<div class="card empty">Niets in deze selectie.</div>'}
+  </section>`;
+}
+function linBar(){
+  if (DEMO) return '<p class="linbar">Linear: gekoppeld · voorbeelddata</p>';
+  const L = data.linear;
+  if (!L) return '';
+  if (!L.on) return '<p class="linbar">Linear nog niet gekoppeld: plak je Linear-sleutel in de Sheet (tabblad Instellingen, B11). Daarna ziet elke melding hier in welke Linear-kaart hij staat.</p>';
+  if (L.error) return `<p class="linbar err">Linear koppelen lukte niet: ${esc(L.error)} <button type="button" id="lin-now">Opnieuw</button></p>`;
+  return `<p class="linbar">Linear: bijgewerkt ${L.at ? ago(new Date(L.at).toISOString()) : 'nog niet'} <button type="button" id="lin-now">Nu bijwerken</button></p>`;
+}
+function claudeText(list){
+  return ['Feedback uit de Proefkeuken van Cooking by the Book (' + list.length + ' meldingen). Verwerk dit: groepeer per probleem, toets mijn prioriteiten (P1 blokkeert, P2 hindert, P3 later), zeg wat je voorstelt en wat eerst moet.',
+    'Zet per melding in de Linear-kaart een regel "Dashboard: <ID>" (meerdere ID\'s met komma\'s). Zoek eerst of de ID al in Linear staat: dan geen nieuwe kaart.', '',
+    ...list.map(i => { const r = recipes.find(x => x.id === i.rid); return `- ID ${i.id} · [${prioOf(i)}${i.prio ? '' : ' voorstel'} · ${i.status || 'nieuw'}] [${i.type}] ${i.name} (${i.tid}), ${new Date(i.at).toLocaleString('nl-NL')}: ${i.message}\n  Waar: ${i.screen || '?'}${r ? ' · ' + r.title : ''}${i.source ? ' · ' + i.source : ''}${i.kept?.note ? '\n  Mijn notitie: ' + i.kept.note : ''}${i.declinedBefore ? '\n  (eerder besloten: niet doen)' : ''}`; })].join('\n');
+}
+
+/* Uitnodigen: link + QR per groep */
+function siteUrl(){ return location.origin + location.pathname.replace(/dashboard\.html$/, ''); }
+function inviteUrl(g){ const s = String(g || '').trim().toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/\s+/g, '-'); return siteUrl() + (s ? '?g=' + encodeURIComponent(s) : ''); }
+function qrSvg(text){ const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: 6, margin: 2, scalable: true }); }
+function uitnodigen(d){
+  const g = view.group ?? 'vrienden', url = inviteUrl(g);
+  const groups = {}; d.testers.forEach(t => groups[t.group || '(zonder groep)'] = (groups[t.group || '(zonder groep)'] || 0) + 1);
+  return `<section class="pane"><div class="inv">
+    <div class="card" style="display:grid;gap:12px">
+      <h2>Nodig proevers uit</h2>
+      <p class="sub">Elke groep krijgt een eigen link. Testers kiezen bij openen een naam en krijgen een test-ID; in het dashboard zie je per groep wie er meedoet.</p>
+      <div class="field"><label for="grp">Groep</label><input id="grp" value="${esc(g)}" placeholder="bijv. vrienden, familie, collega's" maxlength="30"></div>
+      <div class="filters">${['vrienden', 'familie', 'collega\'s', 'sport'].map(x => `<button class="f" type="button" data-grp="${esc(x)}" aria-pressed="${g === x}">${esc(x)}</button>`).join('')}</div>
+      <div class="link" id="inv-url">${esc(url)}</div>
+      <div class="row"><button class="btn primary" type="button" id="inv-share">Delen</button><button class="btn" type="button" id="inv-copy">Kopieer link</button><button class="btn" type="button" id="inv-png">QR opslaan</button></div>
+      ${Object.keys(groups).length ? `<table class="tbl"><thead><tr><th>Groep</th><th style="text-align:right">Testers</th></tr></thead><tbody>${Object.entries(groups).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n">${v}</td></tr>`).join('')}</tbody></table>` : ''}
+    </div>
+    <div class="qr" id="qr">${qrSvg(url)}<p>Doe mee met de Proefkeuken<small>${esc(g || 'scan met je camera')}</small></p></div>
+  </div></section>`;
+}
+const INVITE_TEXT = 'Doe je mee met mijn Proefkeuken? Ik test een vroege versie van mijn kookapp. Open de link op je telefoon, kies een naam en kook een recept mee. Tik op Feedback als iets je opvalt. Duurt 10 minuten (of een keer koken).';
+
+/* ---------- interactie ---------- */
+function bind(d){
+  const m = $('main');
+  m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { tab = b.dataset.go; render(); window.scrollTo(0, 0); });
+  // tooltip op staven (tik of hover)
+  const bars = $('bars');
+  if (bars) { let tip = null; const show = b => { bars.querySelectorAll('.b.on').forEach(x => x.classList.remove('on')); tip?.remove(); if (!b) return; b.classList.add('on'); tip = document.createElement('div'); tip.className = 'tip'; tip.textContent = b.dataset.tip; tip.style.left = (b.offsetLeft + b.offsetWidth / 2) + 'px'; tip.style.top = '14px'; bars.appendChild(tip); };
+    bars.querySelectorAll('.b').forEach(b => { b.onmouseenter = () => show(b); b.onclick = () => show(b); }); bars.onmouseleave = () => show(null); }
+  m.querySelectorAll('[data-tester]').forEach(b => b.onclick = () => {
+    if (view.sel) { const id = b.dataset.tester; view.sel.has(id) ? view.sel.delete(id) : view.sel.add(id); const y = scrollY; render(); scrollTo(0, y); return; }
+    view.tester = b.dataset.tester; render(); window.scrollTo(0, 0); });
+  if ($('sel-on')) $('sel-on').onclick = () => { view.sel = new Set(); render(); };
+  if ($('sel-off')) $('sel-off').onclick = () => { view.sel = null; render(); };
+  if ($('sel-all')) $('sel-all').onclick = () => { view.sel = view.sel.size === d.testers.length ? new Set() : new Set(d.testers.map(t => t.id)); render(); };
+  if ($('sel-del')) $('sel-del').onclick = () => openDelete(d, [...view.sel]);
+  if ($('t-del')) $('t-del').onclick = () => openDelete(d, [$('t-del').dataset.id]);
+  if ($('back')) $('back').onclick = () => { view.tester = null; render(); };
+  if ($('t-feed')) $('t-feed').onclick = () => { view.ft = view.tester; view.ff = 'alles'; view.tester = null; tab = 'feedback'; render(); window.scrollTo(0, 0); };
+  m.querySelectorAll('[data-ff]').forEach(b => b.onclick = () => { view.ff = b.dataset.ff; render(); });
+  if ($('ft')) $('ft').onchange = e => { view.ft = e.target.value; render(); };
+  if ($('copy-claude')) $('copy-claude').onclick = async () => {
+    const list = filtered(d).filter(canCopy); if (!list.length) return;
+    await copy(claudeText(list), 'Gekopieerd. Plak het in je chat met Claude');
+    const c = copiedMap(); list.forEach(i => c[String(i.id)] = Date.now()); lsSet({ copied: c });
+    const y = scrollY; render(); scrollTo(0, y);
+  };
+  if ($('lin-now')) $('lin-now').onclick = async () => { $('lin-now').textContent = 'bezig…'; try { const j = await act('&action=linear'); toast(`Linear bijgewerkt: ${j.linked} ${j.linked === 1 ? 'melding' : 'meldingen'} gekoppeld`); } catch(e) { toast('Linear: ' + (e.message || 'mislukt')); } load(); };
+  const save = async (ref, patch, msg) => {
+    const [tb, id] = ref.split('|');
+    const list = tb === 'Fouten' ? data.fouten : tb === 'Bewaard' ? (data.bewaard = data.bewaard || []) : data.feedback;
+    const src = list.find(x => (x.fid || x.eid || x.bid) === id); if (src) Object.assign(src, patch);
+    if (tb !== 'Bewaard') {   // de bewaarde kopie volgt; gepland en niet doen worden automatisch bewaard
+      data.bewaard = data.bewaard || []; const kc = data.bewaard.find(x => String(x.src) === id);
+      if (kc) { if (patch.status) kc.status = patch.status; if (patch.prio != null) kc.prio = patch.prio; }
+      else if ((patch.status === 'gepland' || patch.status === 'niet doen') && src) data.bewaard.push({ ...keptCopy(src, tb), status: patch.status, reason: patch.status });
+    }
+    const y = scrollY; render(); scrollTo(0, y); toast(msg);
+    if (DEMO) return;
+    const q = Object.entries(patch).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join('');
+    try { const j = await act(`&action=mark&tab=${encodeURIComponent(tb)}&id=${encodeURIComponent(id)}${q}`); if (j.kept) { const kc = (data.bewaard || []).find(x => String(x.src) === id); if (kc) kc.bid = j.kept; } } catch(e) { failed(e); }
+  };
+  m.querySelectorAll('[data-keep]').forEach(b => b.onclick = async () => {
+    const [tb, id] = b.dataset.keep.split('|'); data.bewaard = data.bewaard || [];
+    const it = d.items.find(x => x.tab === tb && String(x.id) === id), on = !!it?.kept;
+    if (on && it.orphan && !confirm('Niet meer bewaren? De tester is al verwijderd, dus deze melding verdwijnt dan helemaal.')) return;
+    if (on) data.bewaard = data.bewaard.filter(x => x !== it.kept); else data.bewaard.push(keptCopy(it, tb));
+    const y = scrollY; render(); scrollTo(0, y); toast(on ? 'Niet meer bewaard' : '★ Bewaard: blijft ook als je de tester verwijdert');
+    if (DEMO) return;
+    try { const j = await act(on ? `&action=unkeep&id=${encodeURIComponent(it.orphan ? it.kept.bid : id)}` : `&action=keep&tab=${encodeURIComponent(tb)}&id=${encodeURIComponent(id)}`);
+      if (j.bid) { const kc = data.bewaard.find(x => String(x.src) === id); if (kc) kc.bid = j.bid; } }
+    catch(e) { failed(e); }
+  });
+  m.querySelectorAll('[data-note]').forEach(inp => inp.onchange = async () => {
+    const kc = (data.bewaard || []).find(x => x.bid === inp.dataset.note); if (kc) kc.note = inp.value.trim(); toast('Notitie bewaard');
+    if (DEMO) return;
+    const nid = kc && /^tmp/.test(kc.bid) ? kc.src : inp.dataset.note;   // ster net gezet: de echte ID is er nog niet, de server vindt hem ook via de bron
+    try { await act(`&action=mark&tab=Bewaard&id=${encodeURIComponent(nid)}&note=${encodeURIComponent(inp.value.trim())}`); } catch(e) { failed(e); }
+  });
+  m.querySelectorAll('[data-setprio]').forEach(b => b.onclick = () => { const [tb, id, pr] = b.dataset.setprio.split('|'); save(tb + '|' + id, { prio: pr }, 'Prioriteit ' + pr); });
+  m.querySelectorAll('[data-setstatus]').forEach(sel => sel.onchange = () => save(sel.dataset.setstatus, { status: sel.value }, 'Status: ' + sel.options[sel.selectedIndex].text));
+  m.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { view.sort = b.dataset.sort; render(); });
+  m.querySelectorAll('[data-open]').forEach(li => li.onclick = () => { const g = d.groups.find(x => x.key === li.dataset.open); view.ff = 'open'; view.ft = ''; view.sort = 'prio'; tab = 'feedback'; render(); const el = g && $('it-' + g.lead.id); if (el) { el.scrollIntoView({ block: 'center' }); el.animate([{ outline: '3px solid var(--pop)' }, { outline: '3px solid transparent' }], 1600); } });
+  if ($('do-install')) $('do-install').onclick = async () => { installEvt.prompt(); await installEvt.userChoice.catch(() => {}); installEvt = null; render(); };
+  if ($('no-install')) $('no-install').onclick = () => { lsSet({ noInstall: true }); render(); };
+  // uitnodigen
+  const grp = $('grp');
+  if (grp) {
+    const upd = () => { view.group = grp.value; const u = inviteUrl(grp.value); $('inv-url').textContent = u; $('qr').innerHTML = qrSvg(u) + `<p>Doe mee met de Proefkeuken<small>${esc(grp.value || 'scan met je camera')}</small></p>`; m.querySelectorAll('[data-grp]').forEach(x => x.setAttribute('aria-pressed', x.dataset.grp === grp.value)); };
+    grp.oninput = upd;
+    m.querySelectorAll('[data-grp]').forEach(b => b.onclick = () => { grp.value = b.dataset.grp; upd(); });
+    $('inv-copy').onclick = () => copy(inviteUrl(grp.value), 'Link gekopieerd');
+    $('inv-share').onclick = async () => { const url = inviteUrl(grp.value); if (navigator.share) { try { await navigator.share({ title: 'Doe mee met de Proefkeuken', text: INVITE_TEXT, url }); } catch(e) {} } else copy(INVITE_TEXT + '\n' + url, 'Uitnodiging gekopieerd'); };
+    $('inv-png').onclick = () => savePng(inviteUrl(grp.value), grp.value);
+  }
+}
+function keptCopy(x, tb){ return { bid: 'tmp' + Math.random().toString(36).slice(2, 8), src: String(x.fid || x.eid || x.id), srcTab: tb, savedAt: new Date().toISOString(), at: x.at, name: x.name, type: tb === 'Fouten' ? 'Fout' : x.type, message: x.message, screen: x.screen, rid: x.rid, prio: x.prio || '', status: x.status || 'nieuw', reason: 'ster', note: '' }; }
+
+/* ---------- verwijderen ----------
+   Twee keuzes: alleen testdata (tester blijft) of tester en alle data. Bij iedereen tegelijk: typ VERWIJDER.
+   De server zet alles eerst in de verborgen Prullenbak (30 dagen); "Ongedaan maken" zet het terug. */
+function openDelete(d, ids){
+  const ts = ids.map(id => d.byT[id]).filter(Boolean), everyone = ts.length === d.testers.length && d.testers.length > 0;
+  const n = (arr, key = 'tid') => arr.filter(x => ids.includes(x[key])).length;
+  const counts = { ev: n(d.ev), ss: n(d.ss), fb: n(data.feedback || []), fo: n(data.fouten || []) };
+  document.getElementById('del-root')?.remove();
+  const root = document.createElement('div'); root.id = 'del-root';
+  root.innerHTML = `<div class="modal-back" id="del-back"></div><div class="modal" role="dialog" aria-labelledby="del-h">
+    <h2 id="del-h">${everyone ? 'Alle testers' : ts.length === 1 ? esc(ts[0].name) : ts.length + ' testers'} verwijderen</h2>
+    <p class="who-list">${ts.map(t => esc(t.name)).join(', ')} · ${counts.ev} events, ${counts.ss} sessies, ${counts.fb} feedback, ${counts.fo} fouten</p>
+    <label class="opt"><input type="radio" name="del-scope" value="data" checked><span><b>Alleen testdata</b><small>Gebruik, sessies, feedback en fouten weg. ${ts.length === 1 ? 'De tester blijft' : 'De testers blijven'} staan en ${ts.length === 1 ? 'kan' : 'kunnen'} gewoon verder.</small></span></label>
+    <label class="opt"><input type="radio" name="del-scope" value="all"><span><b>Tester en alle data</b><small>Helemaal weg. Opent ${ts.length === 1 ? 'deze tester' : 'een tester'} de app weer, dan vraagt de app om opnieuw aan te melden met een schone lei.</small></span></label>
+    ${everyone ? '<div class="field"><label for="del-confirm">Typ <b>VERWIJDER</b> om iedereen te verwijderen</label><input id="del-confirm" autocomplete="off" autocapitalize="characters"></div>' : ''}
+    ${(() => { const nk = d.items.filter(i => ids.includes(i.tid) && i.kept).length; return nk ? `<p class="sub" style="margin:0">★ ${nk} bewaarde ${nk === 1 ? 'melding blijft' : 'meldingen blijven'} staan.</p><label class="opt"><input type="checkbox" id="del-wipekept"><span><b>Ook bewaarde meldingen wissen</b><small>Bijvoorbeeld als een tester vraagt om alles te verwijderen.</small></span></label>` : ''; })()}
+    <p class="sub" style="margin:0">Je kunt dit direct ongedaan maken; daarna staat het nog 30 dagen in het verborgen tabblad Prullenbak van je Sheet.</p>
+    <div class="row" style="justify-content:flex-end"><button class="btn" type="button" id="del-no">Annuleren</button><button class="btn danger" type="button" id="del-yes" ${everyone ? 'disabled' : ''}>Verwijderen</button></div></div>`;
+  document.body.appendChild(root);
+  const close = () => root.remove();
+  root.querySelector('#del-back').onclick = close; root.querySelector('#del-no').onclick = close;
+  const cf = root.querySelector('#del-confirm'); if (cf) cf.oninput = () => { root.querySelector('#del-yes').disabled = cf.value.trim().toUpperCase() !== 'VERWIJDER'; };
+  root.querySelector('#del-yes').onclick = async () => {
+    const scope = root.querySelector('[name="del-scope"]:checked').value, wipe = !!root.querySelector('#del-wipekept')?.checked; close();
+    await doDelete(everyone ? '*' : ids.join(','), ids, scope, ts.length, wipe);
+  };
+}
+async function doDelete(param, ids, scope, nTesters, wipeKept){
+  const snapshot = JSON.parse(JSON.stringify(data));      // voor ongedaan maken in de demo en voor direct terugzetten op het scherm
+  const drop = arr => (arr || []).filter(x => !ids.includes(x.tid));
+  if (wipeKept) { const gone = new Set([...(data.feedback || []), ...(data.fouten || [])].filter(x => ids.includes(x.tid)).map(x => String(x.fid || x.eid))); data.bewaard = (data.bewaard || []).filter(k => !gone.has(String(k.src))); }
+  data.events = drop(data.events); data.sessies = drop(data.sessies); data.feedback = drop(data.feedback); data.fouten = drop(data.fouten);
+  if (scope === 'all') data.testers = (data.testers || []).filter(t => !ids.includes(t.id));
+  view.sel = null; view.tester = null; render();
+  let batch = null;
+  if (!DEMO) {
+    try { const j = await act(`&action=delete&scope=${scope}&ids=${encodeURIComponent(param)}${wipeKept ? '&wipeKept=1' : ''}`); batch = j.batch; }
+    catch(e) { const api0 = data.api; data = snapshot; if (api0 === 0) data.api = 0; render(); toast('Niet verwijderd: ' + e.message); return; }
+  }
+  const t = $('toast'); clearTimeout(toast.t);
+  t.innerHTML = `${scope === 'all' ? nTesters + (nTesters === 1 ? ' tester' : ' testers') + ' verwijderd' : 'Testdata verwijderd'}<button class="undo" type="button" id="undo">Ongedaan maken</button>`; t.hidden = false;
+  toast.t = setTimeout(() => t.hidden = true, 8000);
+  $('undo').onclick = async () => {
+    t.hidden = true; data = snapshot; render();
+    if (DEMO) { toast('Teruggezet'); return; }
+    try { await act(`&action=undo&batch=${encodeURIComponent(batch)}`); toast('Teruggezet'); load(); }
+    catch(e) { toast('Terugzetten mislukt, kijk in de Prullenbak van je Sheet'); }
+  };
+  if (!DEMO) setTimeout(load, 1500);
+}
+async function copy(text, ok){
+  try { await navigator.clipboard.writeText(text); toast(ok); }
+  catch(e) { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast(ok); } catch(x) { toast('Kopiëren lukte niet'); } ta.remove(); }
+}
+function savePng(url, group){
+  const q = qrcode(0, 'M'); q.addData(url); q.make();
+  const n = q.getModuleCount(), cell = 14, pad = 4 * cell, w = n * cell + pad * 2, h = w + 110;
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.fillStyle = '#1c2419';
+  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (q.isDark(r, k)) x.fillRect(pad + k * cell, pad + r * cell, cell, cell);
+  x.textAlign = 'center'; x.font = '800 38px "Bricolage Grotesque", sans-serif'; x.fillText('Doe mee met de Proefkeuken', w / 2, w + 30);
+  x.fillStyle = '#5d6b57'; x.font = '500 22px "DM Mono", monospace'; x.fillText((group || 'Cooking by the Book'), w / 2, w + 70);
+  const a = document.createElement('a'); a.download = `uitnodiging-${(group || 'test').replace(/[^\w-]/g, '')}.png`; a.href = c.toDataURL('image/png'); a.click();
+}
+
+/* ---------- zonder sleutel ---------- */
+function renderSetup(err){
+  $('tabs').innerHTML = ''; $('upd').textContent = '';
+  const { key = '', url = '' } = lsGet();
+  $('main').innerHTML = `<section class="pane"><div class="card" style="display:grid;gap:12px">
+    <h2>Dashboard koppelen</h2>
+    ${err ? `<p class="demo-banner">${esc(err)}</p>` : ''}
+    <p class="sub">Open het dashboard via de link in je Google Sheet (tabblad <b>Instellingen</b>, regel Dashboard). Of vul de twee waarden hier in; ze blijven alleen op dit toestel.</p>
+    <div class="field"><label for="s-url">Web-app-URL</label><input id="s-url" value="${esc(url)}" placeholder="https://script.google.com/macros/s/…/exec"></div>
+    <div class="field"><label for="s-key">Dashboardsleutel</label><input id="s-key" value="${esc(key)}" autocomplete="off"></div>
+    <div class="row"><button class="btn primary" type="button" id="s-go">Koppelen</button><a class="btn" href="?demo#tab=overzicht">Bekijk met voorbeelddata</a></div>
+  </div></section>`;
+  $('s-go').onclick = () => { lsSet({ url: $('s-url').value.trim(), key: $('s-key').value.trim() }); load(); };
+}
+
+/* ---------- voorbeelddata (?demo) ---------- */
+function demoData(){
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const now = Date.now(), iso = t => new Date(t).toISOString();
+  const people = [['Sanne', 'SANNE-7K3F', 'vrienden', 0.8], ['Joost', 'JOOST-Q2MA', 'vrienden', 0.5], ['Mam', 'MAM-H8TX', 'familie', 0.6], ['Ilse', 'ILSE-4RWP', 'collegas', 0.35], ['Bram', 'BRAM-ZN6C', 'vrienden', 0.15]];
+  const testers = [], events = [], sessies = [], feedback = [], fouten = [];
+  const R = recipes.length ? recipes : [{ id: 'demo', title: 'Demo-recept', steps: [{}, {}, {}] }];
+  for (const [name, id, group, p] of people) {
+    const startDay = Math.floor(rnd() * 5) + 8; const days = [];
+    for (let k = startDay; k >= 0; k--) {
+      if (k !== startDay && rnd() > p) continue;
+      const base = now - k * 864e5 - (k ? 0 : 3600e3) - Math.floor(rnd() * 5) * 3600e3; days.push(dayKey(base));
+      const r = R[Math.floor(rnd() * R.length)], n = (r.steps || []).length;
+      let t = base; const ev = (kind, extra = {}) => events.push({ at: iso(t += 60e3 + rnd() * 120e3), tid: id, name, kind, rid: r.id, step: '', screen: '', details: '', ...extra });
+      ev('open', { rid: '' });
+      if (k === startDay) {   // first visit: sign up, most do the proefrit (onboarding mission 1). No rnd() here, so the rest of the demo stays the same
+        let o = 0; const ob = (kind, extra = {}) => events.push({ at: iso(base + 1000 * ++o), tid: id, name, kind, rid: '', step: '', screen: '', details: '', ...extra });
+        ob('aanmelding');
+        if (name !== 'Ilse') { const pr = R[R.length - 1], pd = JSON.stringify({ proef: 1 }); ob('kook_start', { rid: pr.id, details: pd }); for (let i = -2; i <= (pr.steps || []).length; i++) ob('stap', { rid: pr.id, step: i, screen: 'kookmodus', details: pd });
+          ob('proefrit_klaar', { rid: pr.id, details: JSON.stringify({ via: 'proefrit' }) }); ob('missie', { details: JSON.stringify({ m: 'proefrit', n: 1 }) }); }
+        if (name === 'Bram') ob('tip', { details: JSON.stringify({ tip: 'kook-stap', a: 'uit' }) });
+      }
+      ev('pagina', { screen: 'receptpagina' });
+      if (rnd() < 0.75) {
+        ev('kook_start'); const stop = rnd() < 0.25 ? Math.floor(rnd() * n) : n;
+        for (let i = -2; i <= stop; i++) ev('stap', { step: i, screen: 'kookmodus' });
+        if (stop >= n && !sessies.some(s => s.tid === id)) events.push({ at: iso(t + 500), tid: id, name, kind: 'missie', rid: '', step: '', screen: '', details: JSON.stringify({ m: 'koken' }) });
+        if (stop >= n) { const min = Math.round(22 + rnd() * 18); sessies.push({ sid: 'd' + events.length, tid: id, name, rid: r.id, title: r.title, date: dayKey(t), servings: 2, min, recipeMin: r.minutes || 25, rating: rnd() < 0.8 ? Math.min(5, 3 + Math.floor(rnd() * 3)) : '', chips: rnd() < 0.4 ? ['Te flauw', 'Te zout', 'Precies goed'][Math.floor(rnd() * 3)] : '', note: rnd() < 0.3 ? ['Kip was na 6 min al gaar', 'Saus iets te dun, meer pesto', 'Heerlijk! Volgende keer dubbele portie'][Math.floor(rnd() * 3)] : '', adj: '', updated: iso(t) }); ev('klaar'); }
+        else ev('kook_dicht', { step: stop });
+      }
+    }
+    const first = now - startDay * 864e5;
+    testers.push({ id, name, group, first: iso(first), last: events.filter(e => e.tid === id).map(e => e.at).sort().pop(), days: days.length, events: events.filter(e => e.tid === id).length, device: 'Linux; Android 14; Pixel 7', size: '412×915', version: 'v45', dayList: days.join(',') });
+  }
+  const fbs = [['SANNE-7K3F', 'Sanne', 'Snap ik niet', 'Waar zie ik hoeveel pasta ik nodig heb tijdens het koken?', 'kookmodus: stap 1 van 6 (Pasta koken)', 5], ['JOOST-Q2MA', 'Joost', 'Werkt niet', 'Timer ging niet af toen mijn scherm uit stond', 'kookmodus: stap 2 van 6 (Kip bruinen)', 1.2], ['MAM-H8TX', 'Mam', 'Mooi', 'Fijn dat je de ingrediënten kunt afvinken!', 'kookmodus: klaarzetten', 3], ['ILSE-4RWP', 'Ilse', 'Idee', 'Boodschappenlijst maken vanuit het recept?', 'receptpagina', 2], ['SANNE-7K3F', 'Sanne', 'Werkt niet', 'Knop Verder reageerde pas na 2x tikken', 'kookmodus: stap 4 van 6 (Saus mengen)', 0.3]];
+  fbs.push(['MAM-H8TX', 'Mam', 'Werkt niet', 'Verder-knop deed niks bij Saus mengen', 'kookmodus: stap 4 van 6 (Saus mengen)', 0.8], ['ILSE-4RWP', 'Ilse', 'Snap ik niet', 'Hoeveel pasta moet ik pakken?', 'kookmodus: stap 1 van 6 (Pasta koken)', 1.5]);
+  [...new Set(fbs.map(f => f[0]))].forEach(tid => { const f = fbs.filter(x => x[0] === tid).sort((a, b) => b[5] - a[5])[0]; events.push({ at: iso(now - f[5] * 864e5 + 60e3), tid, name: f[1], kind: 'missie', rid: '', step: '', screen: '', details: JSON.stringify({ m: 'feedback' }) }); });
+  fbs.forEach(([tid, name, type, message, screen, dAgo], k) => feedback.push({ fid: 'f' + k, at: iso(now - dAgo * 864e5), tid, name, type, message, screen, rid: R[0].id, context: '', status: k === 1 ? 'opgelost' : k === 3 ? 'gepland' : 'nieuw', prio: k === 3 ? 'P2' : '' }));
+  fouten.push({ eid: 'e1', at: iso(now - 0.1 * 864e5), tid: 'BRAM-ZN6C', name: 'Bram', message: "Cannot read properties of undefined (reading 'timer')", source: 'app.js:1094:41', screen: 'kookmodus: stap 3 van 6 (Groente)', rid: R[0].id, version: 'v45', device: 'Linux; Android 13; SM-A536B', stack: "TypeError: Cannot read properties of undefined (reading 'timer')\n    at adjustTimer (app.js:1094:41)\n    at HTMLButtonElement.<anonymous> (app.js:1001:7)", status: 'nieuw', prio: '' });
+  events.sort((a, b) => a.at.localeCompare(b.at));
+  feedback[2].status = 'niet doen';
+  Object.assign(feedback[1], { linear: 'PK-12', linearState: 'Klaar' }); Object.assign(feedback[3], { linear: 'PK-14', linearState: 'Backlog' }); Object.assign(feedback[5], { linear: 'PK-15', linearState: 'Bezig', status: 'gepland' });
+  feedback.push({ fid: 'f9', at: iso(now - 0.2 * 864e5), tid: 'BRAM-ZN6C', name: 'Bram', type: 'Mooi', message: 'Fijn dat je kunt afvinken', screen: 'kookmodus: klaarzetten', rid: R[0].id, context: '', status: 'nieuw', prio: '' });
+  const bewaard = [
+    { bid: 'b1', src: 'f2', srcTab: 'Feedback', savedAt: iso(now - 2 * 864e5), at: feedback[2].at, name: 'Mam', type: 'Mooi', message: feedback[2].message, screen: feedback[2].screen, rid: R[0].id, prio: '', status: 'niet doen', reason: 'niet doen', note: 'Bestaat al' },
+    { bid: 'b2', src: 'f-weg', srcTab: 'Feedback', savedAt: iso(now - 5 * 864e5), at: iso(now - 6 * 864e5), name: 'Kees', type: 'Idee', message: 'Weekmenu op zondag als pushbericht', screen: 'startpagina', rid: '', prio: 'P3', status: 'gepland', reason: 'gepland', note: 'Fase 3: kookplan' }];
+  return { generated: iso(now), testers, events, sessies, feedback, fouten, bewaard, linear: { on: true, at: now - 4 * 60e3, error: '', base: 'https://linear.app/cooking-by-the-book' } };
+}
+
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('dashboard-sw.js', { scope: './dashboard.html' }).catch(() => {});
+load();
+})();
+</script>
+</body>
+</html>

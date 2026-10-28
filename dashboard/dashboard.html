@@ -72,6 +72,15 @@ body.selecting main.wrap{padding-bottom:calc(172px + env(safe-area-inset-bottom)
 .st{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 26px 4px 10px;font-size:.8rem;font-weight:600;appearance:none;background:var(--surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%235d6b57" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>') no-repeat right 7px center/12px}
 .ia{flex-wrap:wrap;align-items:center}
 .ia .hint{font-size:.72rem;color:var(--muted)}
+/* d6: Linear-koppeling */
+.lin{display:inline-flex;align-items:center;gap:5px;font-size:.78rem;font-weight:600;padding:4px 10px;border-radius:999px;background:#5e6ad21f;color:#5e6ad2;text-decoration:none;white-space:nowrap}
+.lin svg{width:12px;height:12px}
+.lin.done{background:var(--accent-soft);color:var(--accent)}
+.lin.no{background:var(--sunk);color:var(--muted)}
+.chip.pend{background:#5e6ad214;color:#5e6ad2}
+.linbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:.8rem;color:var(--muted)}
+.linbar.err{color:var(--danger)}
+.linbar button{border:0;background:none;color:inherit;font:inherit;font-weight:600;text-decoration:underline;cursor:pointer;padding:0}
 .star{border:0;background:none;font-size:1.25rem;line-height:1;padding:2px 2px 2px 6px;cursor:pointer;color:var(--muted)}
 .star[aria-pressed="true"]{color:var(--pop)}
 .knote{width:100%;border:1px dashed var(--line);border-radius:10px;padding:7px 10px;font-size:.84rem;background:var(--sunk)}
@@ -314,11 +323,11 @@ async function api(q = ''){
 }
 /* Acties (bewaren, status, verwijderen…): alleen gelukt als het script {ok:true} terugstuurt.
    Een verouderd script kent de actie niet en stuurt gewoon alle data terug: dat is NIET gelukt. */
-const NEED_API = 3;
+const NEED_API = 4;   // d6: Linear-koppeling (script s7)
 const oldScript = () => !DEMO && data && !(Number(data.api) >= NEED_API);
 /* Versies: DASH_VERSION = dit dashboard (ophogen bij elke wijziging), LATEST_SCRIPT = nieuwste Code.gs in de repo.
    Het script stuurt zijn eigen nummer mee (SCRIPT_VERSION); scripts van vóór s4 hebben dat nog niet. */
-const DASH_VERSION = 'd5', LATEST_SCRIPT = 's5';
+const DASH_VERSION = 'd6', LATEST_SCRIPT = 's7';
 const scriptVer = () => !data ? '' : data.script ? String(data.script) : Number(data.api) >= 3 ? 's3' : 'oud';
 const vnum = v => parseInt(String(v).replace(/\D/g, ''), 10) || 0;
 function renderVersion(){
@@ -400,6 +409,20 @@ function derive(){
 const AUTO_P = { 'Fout': 'P1', 'Werkt niet': 'P1', 'Snap ik niet': 'P2', 'Idee': 'P3', 'Mooi': 'P3' };
 const STATUS = [['nieuw', 'Nieuw'], ['gepland', 'Gepland'], ['opgelost', 'Opgelost'], ['niet doen', 'Niet doen']];
 const isOpen = i => !['opgelost', 'niet doen'].includes(i.status || 'nieuw');
+/* d6: Linear. linear = issue-ID (PK-21), linearState = kolom in Linear; het script (s7) vult beide en zet de status.
+   "Gekopieerd" onthoudt dit apparaat 24 uur (wacht op de koppeling), zodat je niets dubbel naar Claude stuurt. */
+const COPY_TTL = 864e5;
+const copiedMap = () => { const c = lsGet().copied || {}, now = Date.now(); return Object.fromEntries(Object.entries(c).filter(([, t]) => now - t < COPY_TTL)); };
+const linOf = i => i.linear || i.kept?.linear || '';
+const isPending = i => !linOf(i) && !!copiedMap()[String(i.id)];
+const canCopy = i => !linOf(i) && !isPending(i) && !i.orphan;
+const LIN_IC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>';
+function linChip(i){
+  const id = linOf(i); if (!id) return '';
+  const base = data?.linear?.base || 'https://linear.app/cooking-by-the-book', st = i.linearState || '';
+  const cls = /^(klaar|niet doen|duplicate)$/i.test(st) ? (st.toLowerCase() === 'klaar' ? 'done' : 'no') : '';
+  return `<a class="lin ${cls}" href="${esc(base)}/issue/${encodeURIComponent(id)}" target="_blank" rel="noopener" title="Openen in Linear">${LIN_IC}${esc(id)}${st ? ' · ' + esc(st) : ''}</a>`;
+}
 const prioOf = i => i.prio || AUTO_P[i.type] || 'P2';
 const groupKey = i => [i.type === 'Fout' ? 'F:' + String(i.message).slice(0, 60) : i.type, String(i.screen || '').replace(/\s*\(.*\)$/, ''), i.rid || ''].join('|');
 function groups(items){
@@ -603,19 +626,19 @@ const TYPE_IC = { 'Werkt niet': '🐞', 'Fout': '⚠', 'Snap ik niet': '?', 'Ide
 function itemHtml(i, g){
   const r = recipes.find(x => x.id === i.rid), open = isOpen(i), p = prioOf(i), ref = esc(i.tab) + '|' + esc(i.id), k = i.kept;
   return `<article class="item ${open ? p.toLowerCase() : 'dim'}" id="it-${esc(i.id)}">
-    <div class="ih"><span class="chip ${i.bug ? 'bad' : i.type === 'Mooi' ? 'ok' : i.type === 'Snap ik niet' ? 'warn' : ''}">${TYPE_IC[i.type] || ''} ${esc(i.type)}</span><span class="who">${esc(i.name)}</span>${i.orphan ? '<span class="chip shrink" title="Tester verwijderd">verwijderd</span>' : ''}${i.declinedBefore ? '<span class="chip warn shrink" title="Eerder besloten: niet doen">eerder: niet doen</span>' : ''}${g && g.items.length > 1 ? `<span class="dup shrink">×${g.items.length} · ${g.testers.size} ${g.testers.size === 1 ? 'tester' : 'testers'}</span>` : ''}<span class="when" title="${esc(new Date(i.at).toLocaleString('nl-NL'))}">${ago(i.at).replace(' geleden', '')}</span><button class="star" type="button" data-keep="${ref}" aria-pressed="${!!k}" aria-label="${k ? 'Niet meer bewaren' : 'Bewaren'}" title="${k ? 'Bewaard' : 'Bewaren'}">${k ? '★' : '☆'}</button></div>
+    <div class="ih"><span class="chip ${i.bug ? 'bad' : i.type === 'Mooi' ? 'ok' : i.type === 'Snap ik niet' ? 'warn' : ''}">${TYPE_IC[i.type] || ''} ${esc(i.type)}</span><span class="who">${esc(i.name)}</span>${i.orphan ? '<span class="chip shrink" title="Tester verwijderd">verwijderd</span>' : ''}${i.declinedBefore ? '<span class="chip warn shrink" title="Eerder besloten: niet doen">eerder: niet doen</span>' : ''}${isPending(i) ? '<span class="chip pend" title="Gekopieerd voor Claude; de Linear-kaart verschijnt hier zodra hij is aangemaakt">gekopieerd</span>' : ''}${g && g.items.length > 1 ? `<span class="dup shrink">×${g.items.length} · ${g.testers.size} ${g.testers.size === 1 ? 'tester' : 'testers'}</span>` : ''}<span class="when" title="${esc(new Date(i.at).toLocaleString('nl-NL'))}">${ago(i.at).replace(' geleden', '')}</span><button class="star" type="button" data-keep="${ref}" aria-pressed="${!!k}" aria-label="${k ? 'Niet meer bewaren' : 'Bewaren'}" title="${k ? 'Bewaard' : 'Bewaren'}">${k ? '★' : '☆'}</button></div>
     <div class="msg">${esc(i.message)}</div>
     <div class="where">${esc(i.screen || '')}${r ? ' · ' + esc(short(r.title)) : ''}${i.source ? ' · ' + esc(i.source) : ''}</div>
     ${g && g.items.length > 1 ? `<details class="more"><summary>Ook gemeld door ${esc([...new Set(g.items.slice(1).map(x => x.name))].join(', '))}</summary><ul>${g.items.slice(1).map(x => `<li>${esc(x.message)} <span class="muted">— ${esc(x.name)}, ${ago(x.at)}</span></li>`).join('')}</ul></details>` : ''}
     ${i.stack ? `<details class="stack"><summary>Technische details</summary><pre>${esc(i.stack)}\n\n${esc(i.device || '')} · ${esc(i.version || '')}</pre></details>` : ''}
     <div class="ia"><span class="prio ${i.prio ? '' : 'auto'}" role="group" aria-label="Prioriteit">${['P1', 'P2', 'P3'].map(x => `<button type="button" data-p="${x}" data-setprio="${ref}|${x}" aria-pressed="${p === x}">${x}</button>`).join('')}</span>
-      <select class="st" data-setstatus="${ref}" aria-label="Status">${STATUS.map(([k, l]) => `<option value="${k}" ${(i.status || 'nieuw') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      ${linOf(i) ? linChip(i) : `<select class="st" data-setstatus="${ref}" aria-label="Status">${STATUS.map(([k, l]) => `<option value="${k}" ${(i.status || 'nieuw') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`}
       ${i.prio ? '' : '<span class="hint">voorstel</span>'}</div>
     ${k ? `<input class="knote" data-note="${esc(k.bid)}" value="${esc(k.note || '')}" placeholder="Notitie (bv. fixen in v51)" maxlength="500" aria-label="Notitie">` : ''}
   </article>`;
 }
-const FF = [['open', 'Open'], ['gepland', 'Gepland'], ['bewaard', '★ Bewaard'], ['niet doen', 'Niet doen'], ['opgelost', 'Opgelost'], ['alles', 'Alles'], ['Werkt niet', '🐞 Werkt niet'], ['Fout', '⚠ Fouten'], ['Snap ik niet', '? Snap ik niet'], ['Idee', '💡 Idee'], ['Mooi', '♥ Mooi']];
-const matchF = (i, k) => k === 'alles' || (k === 'open' ? isOpen(i) : k === 'bewaard' ? !!i.kept : ['gepland', 'niet doen', 'opgelost'].includes(k) ? (i.status || 'nieuw') === k : i.type === k);
+const FF = [['open', 'Open'], ['nietlinear', 'Nog niet in Linear'], ['linear', 'In Linear'], ['gepland', 'Gepland'], ['bewaard', '★ Bewaard'], ['niet doen', 'Niet doen'], ['opgelost', 'Opgelost'], ['alles', 'Alles'], ['Werkt niet', '🐞 Werkt niet'], ['Fout', '⚠ Fouten'], ['Snap ik niet', '? Snap ik niet'], ['Idee', '💡 Idee'], ['Mooi', '♥ Mooi']];
+const matchF = (i, k) => k === 'alles' || (k === 'open' ? isOpen(i) : k === 'linear' ? !!linOf(i) : k === 'nietlinear' ? isOpen(i) && !linOf(i) : k === 'bewaard' ? !!i.kept : ['gepland', 'niet doen', 'opgelost'].includes(k) ? (i.status || 'nieuw') === k : i.type === k);
 function filtered(d){
   return d.items.filter(i => matchF(i, view.ff) && (!view.ft || i.tid === view.ft));
 }
@@ -632,13 +655,24 @@ function feedbackPane(d){
     <div class="filters">${FF.map(([k, l]) => `<button class="f" type="button" data-ff="${esc(k)}" aria-pressed="${view.ff === k}">${l}<small>${count(k)}</small></button>`).join('')}
       <select class="f" id="ft" aria-label="Tester"><option value="">Alle testers</option>${d.testers.map(t => `<option value="${esc(t.id)}" ${view.ft === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
     <div class="row" style="align-items:center;justify-content:space-between"><span class="seg" role="group" aria-label="Sorteren"><button type="button" data-sort="prio" aria-pressed="${byPrio}">Prioriteit</button><button type="button" data-sort="new" aria-pressed="${!byPrio}">Nieuwste</button></span>
-      <button class="btn primary sm" type="button" id="copy-claude" ${list.length ? '' : 'disabled'}>Kopieer ${list.length} voor Claude</button></div>
+      ${(() => { const n = list.filter(canCopy).length, inL = list.filter(i => linOf(i)).length, pend = list.filter(isPending).length;
+        return `<button class="btn primary sm" type="button" id="copy-claude" ${n ? '' : 'disabled'} title="${inL} al in Linear${pend ? ', ' + pend + ' gekopieerd' : ''}">${n ? `Kopieer ${n} nieuwe voor Claude` : list.length ? 'Alles al naar Claude' : 'Niets te kopiëren'}</button>`; })()}</div>
+    ${linBar()}
     ${body ? `<div class="feed">${body}</div>` : '<div class="card empty">Niets in deze selectie.</div>'}
   </section>`;
 }
+function linBar(){
+  if (DEMO) return '<p class="linbar">Linear: gekoppeld · voorbeelddata</p>';
+  const L = data.linear;
+  if (!L) return '';
+  if (!L.on) return '<p class="linbar">Linear nog niet gekoppeld: plak je Linear-sleutel in de Sheet (tabblad Instellingen, B11). Daarna ziet elke melding hier in welke Linear-kaart hij staat.</p>';
+  if (L.error) return `<p class="linbar err">Linear koppelen lukte niet: ${esc(L.error)} <button type="button" id="lin-now">Opnieuw</button></p>`;
+  return `<p class="linbar">Linear: bijgewerkt ${L.at ? ago(new Date(L.at).toISOString()) : 'nog niet'} <button type="button" id="lin-now">Nu bijwerken</button></p>`;
+}
 function claudeText(list){
-  return ['Feedback uit de Proefkeuken van Cooking by the Book (' + list.length + ' meldingen). Verwerk dit: groepeer per probleem, toets mijn prioriteiten (P1 blokkeert, P2 hindert, P3 later), zeg wat je voorstelt en wat eerst moet.', '',
-    ...list.map(i => { const r = recipes.find(x => x.id === i.rid); return `- [${prioOf(i)}${i.prio ? '' : ' voorstel'} · ${i.status || 'nieuw'}] [${i.type}] ${i.name} (${i.tid}), ${new Date(i.at).toLocaleString('nl-NL')}: ${i.message}\n  Waar: ${i.screen || '?'}${r ? ' · ' + r.title : ''}${i.source ? ' · ' + i.source : ''}${i.kept?.note ? '\n  Mijn notitie: ' + i.kept.note : ''}${i.declinedBefore ? '\n  (eerder besloten: niet doen)' : ''}`; })].join('\n');
+  return ['Feedback uit de Proefkeuken van Cooking by the Book (' + list.length + ' meldingen). Verwerk dit: groepeer per probleem, toets mijn prioriteiten (P1 blokkeert, P2 hindert, P3 later), zeg wat je voorstelt en wat eerst moet.',
+    'Zet per melding in de Linear-kaart een regel "Dashboard: <ID>" (meerdere ID\'s met komma\'s). Zoek eerst of de ID al in Linear staat: dan geen nieuwe kaart.', '',
+    ...list.map(i => { const r = recipes.find(x => x.id === i.rid); return `- ID ${i.id} · [${prioOf(i)}${i.prio ? '' : ' voorstel'} · ${i.status || 'nieuw'}] [${i.type}] ${i.name} (${i.tid}), ${new Date(i.at).toLocaleString('nl-NL')}: ${i.message}\n  Waar: ${i.screen || '?'}${r ? ' · ' + r.title : ''}${i.source ? ' · ' + i.source : ''}${i.kept?.note ? '\n  Mijn notitie: ' + i.kept.note : ''}${i.declinedBefore ? '\n  (eerder besloten: niet doen)' : ''}`; })].join('\n');
 }
 
 /* Uitnodigen: link + QR per groep */
@@ -683,7 +717,13 @@ function bind(d){
   if ($('t-feed')) $('t-feed').onclick = () => { view.ft = view.tester; view.ff = 'alles'; view.tester = null; tab = 'feedback'; render(); window.scrollTo(0, 0); };
   m.querySelectorAll('[data-ff]').forEach(b => b.onclick = () => { view.ff = b.dataset.ff; render(); });
   if ($('ft')) $('ft').onchange = e => { view.ft = e.target.value; render(); };
-  if ($('copy-claude')) $('copy-claude').onclick = () => copy(claudeText(filtered(d)), 'Gekopieerd. Plak het in je chat met Claude');
+  if ($('copy-claude')) $('copy-claude').onclick = async () => {
+    const list = filtered(d).filter(canCopy); if (!list.length) return;
+    await copy(claudeText(list), 'Gekopieerd. Plak het in je chat met Claude');
+    const c = copiedMap(); list.forEach(i => c[String(i.id)] = Date.now()); lsSet({ copied: c });
+    const y = scrollY; render(); scrollTo(0, y);
+  };
+  if ($('lin-now')) $('lin-now').onclick = async () => { $('lin-now').textContent = 'bezig…'; try { const j = await act('&action=linear'); toast(`Linear bijgewerkt: ${j.linked} ${j.linked === 1 ? 'melding' : 'meldingen'} gekoppeld`); } catch(e) { toast('Linear: ' + (e.message || 'mislukt')); } load(); };
   const save = async (ref, patch, msg) => {
     const [tb, id] = ref.split('|');
     const list = tb === 'Fouten' ? data.fouten : tb === 'Bewaard' ? (data.bewaard = data.bewaard || []) : data.feedback;
@@ -855,11 +895,12 @@ function demoData(){
   fouten.push({ eid: 'e1', at: iso(now - 0.1 * 864e5), tid: 'BRAM-ZN6C', name: 'Bram', message: "Cannot read properties of undefined (reading 'timer')", source: 'app.js:1094:41', screen: 'kookmodus: stap 3 van 6 (Groente)', rid: R[0].id, version: 'v45', device: 'Linux; Android 13; SM-A536B', stack: "TypeError: Cannot read properties of undefined (reading 'timer')\n    at adjustTimer (app.js:1094:41)\n    at HTMLButtonElement.<anonymous> (app.js:1001:7)", status: 'nieuw', prio: '' });
   events.sort((a, b) => a.at.localeCompare(b.at));
   feedback[2].status = 'niet doen';
+  Object.assign(feedback[1], { linear: 'PK-12', linearState: 'Klaar' }); Object.assign(feedback[3], { linear: 'PK-14', linearState: 'Backlog' }); Object.assign(feedback[5], { linear: 'PK-15', linearState: 'Bezig', status: 'gepland' });
   feedback.push({ fid: 'f9', at: iso(now - 0.2 * 864e5), tid: 'BRAM-ZN6C', name: 'Bram', type: 'Mooi', message: 'Fijn dat je kunt afvinken', screen: 'kookmodus: klaarzetten', rid: R[0].id, context: '', status: 'nieuw', prio: '' });
   const bewaard = [
     { bid: 'b1', src: 'f2', srcTab: 'Feedback', savedAt: iso(now - 2 * 864e5), at: feedback[2].at, name: 'Mam', type: 'Mooi', message: feedback[2].message, screen: feedback[2].screen, rid: R[0].id, prio: '', status: 'niet doen', reason: 'niet doen', note: 'Bestaat al' },
     { bid: 'b2', src: 'f-weg', srcTab: 'Feedback', savedAt: iso(now - 5 * 864e5), at: iso(now - 6 * 864e5), name: 'Kees', type: 'Idee', message: 'Weekmenu op zondag als pushbericht', screen: 'startpagina', rid: '', prio: 'P3', status: 'gepland', reason: 'gepland', note: 'Fase 3: kookplan' }];
-  return { generated: iso(now), testers, events, sessies, feedback, fouten, bewaard };
+  return { generated: iso(now), testers, events, sessies, feedback, fouten, bewaard, linear: { on: true, at: now - 4 * 60e3, error: '', base: 'https://linear.app/cooking-by-the-book' } };
 }
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('dashboard-sw.js', { scope: './dashboard.html' }).catch(() => {});

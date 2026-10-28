@@ -3,6 +3,8 @@
 const fs = require('fs'), vm = require('vm');
 const sheets = {}, notes = [], mails = [], triggers = [];
 let ntfyStatus = 200;
+// s7: nagebootste Linear-API (issues met "Dashboard:"-regels)
+let linearIssues = [], linearStatus = 200, linearCalls = 0, linearAuth = null;
 const colIdx = c => c.charCodeAt(0) - 65;
 function mkSheet(name){ const rows = []; const trim = () => { while (rows.length > 1 && rows[rows.length - 1].every(v => v === '' || v == null)) rows.pop(); }; return {
   name, rows,
@@ -33,11 +35,13 @@ const ctx = {
   PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => props[k] = v }) },
   CacheService: { getScriptCache: () => ({ get: k => cache[k] ?? null, put: (k, v) => cache[k] = v, remove: k => { delete cache[k]; } }) },
   LockService: { getScriptLock: () => ({ waitLock(){}, releaseLock(){} }) },
-  UrlFetchApp: { fetch: (u, o) => { const m = JSON.parse(o.payload); m._auth = (o.headers || {}).Authorization; if (ntfyStatus === 200) notes.push(m); return { getResponseCode: () => ntfyStatus, getContentText: () => ntfyStatus === 429 ? 'limit reached' : 'ok' }; } },
+  UrlFetchApp: { fetch: (u, o) => {
+    if (u === 'https://api.linear.app/graphql') { linearCalls++; linearAuth = o.headers.Authorization; const body = linearStatus === 200 ? { data: { issues: { nodes: linearIssues, pageInfo: { hasNextPage: false, endCursor: null } } } } : { errors: [{ message: 'Authentication required' }] }; return { getResponseCode: () => linearStatus === 200 ? 200 : 400, getContentText: () => JSON.stringify(body) }; }
+    const m = JSON.parse(o.payload); m._auth = (o.headers || {}).Authorization; if (ntfyStatus === 200) notes.push(m); return { getResponseCode: () => ntfyStatus, getContentText: () => ntfyStatus === 429 ? 'limit reached' : 'ok' }; } },
   MailApp: { sendEmail: m => mails.push(m) },
   Session: { getEffectiveUser: () => ({ getEmail: () => 'wes@example.com' }) },
   ScriptApp: { getProjectTriggers: () => triggers, newTrigger: h => ({ timeBased: () => ({ everyMinutes: n => ({ create: () => triggers.push({ getHandlerFunction: () => h, n }) }) }) }) },
-  Utilities: { formatDate: (d, tz, f) => f === 'yyyy-MM-dd' ? d.toISOString().slice(0, 10) : d.toISOString(), getUuid: () => Math.random().toString(16).slice(2) + 'abcdefgh', base64Encode: x => Buffer.from(x).toString('base64'), computeDigest: (a, s) => [...require('crypto').createHash('md5').update(s).digest()], DigestAlgorithm: { MD5: 1 } },
+  Utilities: { formatDate: (d, tz, f) => f === 'yyyy-MM-dd' ? d.toISOString().slice(0, 10) : f === 'yyyy-M-d H:m:s' ? (() => { const x = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hourCycle: 'h23' }).formatToParts(d).map(p => [p.type, p.value])); return `${+x.year}-${+x.month}-${+x.day} ${+x.hour}:${+x.minute}:${+x.second}`; })() : d.toISOString(), getUuid: () => Math.random().toString(16).slice(2) + 'abcdefgh', base64Encode: x => Buffer.from(x).toString('base64'), computeDigest: (a, s) => [...require('crypto').createHash('md5').update(s).digest()], DigestAlgorithm: { MD5: 1 } },
   ContentService: { createTextOutput: s => ({ s, setMimeType(){ return this; } }), MimeType: { TEXT: 1, JSON: 2, JAVASCRIPT: 3 } },
   console: { log(){}, warn(){}, error(){} }
 };
@@ -246,5 +250,46 @@ assert(op.uit.Fouten && op.uit.Fouten.leeg === 1 && !sheets.Fouten.rows.slice(1)
 assert(sheets.Prullenbak.rows.length === tr0 + 2, 'opschonen: dubbelen staan in de Prullenbak');
 assert(fbCount('met eid') === 2 && fbCount('oude app') === 1, 'opschonen: echte meldingen blijven staan');
 assert(!ctx.meldingenOpschonen().batch, 'opschonen nog eens: niets meer te doen');
-assert(get({ key: K }).script === 's6' && get({ key: K }).api === 3, 'scriptversie s6, API blijft 3 (dashboard hoeft niet mee)');
+// ---------- s7: koppeling met Linear (BL-5) ----------
+const L = { id: 'LINEA-R7K2', name: 'Lin', group: 'vrienden' };
+post({ tester: L, items: [{ kind: 'feedback', eid: 'l1', at: '2026-10-28T07:12:40Z', type: 'Werkt niet', message: 'linear een' },
+                          { kind: 'feedback', eid: 'l2', at: '2026-10-28T07:15:05Z', type: 'Idee', message: 'linear twee' },
+                          { kind: 'feedback', eid: 'l3', at: '2026-10-28T07:20:00Z', type: 'Idee', message: 'linear drie' },
+                          { kind: 'fout', eid: 'l4', at: '2026-10-28T07:21:00Z', message: 'linear fout', source: 'app.js:9:9' }] });
+const row = (tab, msg) => sheets[tab].rows.find(r => r[tab === 'Feedback' ? 5 : 4] === msg);
+const fcol = k => ctx.TABS ? 0 : 0; const FC = ['fid','at','tid','name','type','message','screen','rid','context','status','prio','linear','linearState'], EC = ['eid','at','tid','name','message','source','screen','rid','version','device','stack','status','prio','linear','linearState'];
+assert(get({ key: K }).linear.on === false && /sleutel/i.test(get({ key: K, action: 'linear' }).error || ''), 'zonder sleutel: koppelen meldt dat de sleutel ontbreekt');
+assert(linearCalls === 0, 'zonder sleutel: Linear wordt niet aangeroepen');
+sheets.Instellingen.rows[10] = sheets.Instellingen.rows[10] || []; sheets.Instellingen.rows[10][1] = 'lin_api_GEHEIM123';
+const id1 = row('Feedback', 'linear een')[0], id3 = row('Feedback', 'linear drie')[0], idE = row('Fouten', 'linear fout')[0];
+linearIssues = [
+  { identifier: 'PK-21', url: 'https://linear.app/cbtb/issue/PK-21/timer', state: { name: 'Backlog', type: 'backlog' }, description: 'Timer doet niks.\n\nDashboard: ' + id1 + ', ' + idE },
+  { identifier: 'PK-22', url: 'https://linear.app/cbtb/issue/PK-22/idee', state: { name: 'Klaar', type: 'completed' }, description: 'Idee.\n\nDashboard: LINEA-R7K2 @ 28-10-2026, 08:15:05' },   // oude kopie: tester + tijd (Amsterdam)
+  { identifier: 'PK-23', url: 'https://linear.app/cbtb/issue/PK-23/x', state: { name: 'Niet doen', type: 'canceled' }, description: '**Dashboard:** `' + id3 + '`' },
+  { identifier: 'PK-24', url: 'https://linear.app/cbtb/issue/PK-24/y', state: { name: 'Duplicate', type: 'duplicate' }, description: 'Dashboard: ' + id1 }];
+const lk = get({ key: K, action: 'linear' });
+assert(lk.ok && lk.linked === 4 && linearAuth === 'lin_api_GEHEIM123', 'koppelen: 4 meldingen gekoppeld, sleutel meegestuurd');
+assert(props.LINEAR_KEY === 'lin_api_GEHEIM123' && !String(sheets.Instellingen.rows[10][1]).includes('lin_api_'), 'sleutel naar scripteigenschappen, cel B11 gewist');
+const r1l = row('Feedback', 'linear een');
+assert(r1l[FC.indexOf('linear')] === 'PK-21' && r1l[FC.indexOf('linearState')] === 'Backlog' && r1l[FC.indexOf('status')] === 'gepland', 'op meldings-ID: PK-21 · Backlog, status gepland (open issue wint van duplicaat)');
+const r2l = row('Feedback', 'linear twee');
+assert(r2l[FC.indexOf('linear')] === 'PK-22' && r2l[FC.indexOf('status')] === 'opgelost', 'op tester @ tijd (Amsterdam): PK-22, Klaar → opgelost');
+assert(row('Feedback', 'linear drie')[FC.indexOf('status')] === 'niet doen' && row('Feedback', 'linear drie')[FC.indexOf('linear')] === 'PK-23', 'markdown om de regel heen: werkt; Niet doen → niet doen');
+assert(row('Fouten', 'linear fout')[EC.indexOf('linear')] === 'PK-21', 'fouten worden ook gekoppeld');
+assert(sheets.Bewaard.rows.some(r => r[1] === id3 && r[11] === 'niet doen' && r[14] === 'PK-23'), 'niet doen: automatisch bewaard, met Linear-ID');
+assert(!sheets.Feedback.rows.some(r => r[5] === 'met eid' && r[FC.indexOf('linear')]), 'niet genoemde meldingen blijven ongekoppeld');
+const dl = get({ key: K });
+assert(dl.linear.on && dl.linear.base === 'https://linear.app/cbtb' && !dl.linear.error && dl.feedback.find(f => f.message === 'linear een').linear === 'PK-21', 'dashboard krijgt koppeling, Linear-adres en geen fout');
+const calls0 = linearCalls; get({ key: K }); assert(linearCalls === calls0, 'dashboard openen binnen 2 min: Linear niet opnieuw gevraagd');
+props.LINEAR_AT = String(Date.now() - 180000); get({ key: K }); assert(linearCalls === calls0 + 1, 'dashboard openen na 2 min: eerst koppelen');
+linearIssues[0].state = { name: 'Klaar', type: 'completed' };
+ctx.digestVersturen({}); assert(row('Feedback', 'linear een')[FC.indexOf('status')] === 'opgelost' && row('Feedback', 'linear een')[FC.indexOf('linearState')] === 'Klaar', 'trigger: issue naar Klaar → melding opgelost');
+linearIssues = linearIssues.filter(i => i.identifier !== 'PK-22');
+get({ key: K, action: 'linear' }); assert(row('Feedback', 'linear twee')[FC.indexOf('linear')] === '', 'kenmerk weg uit Linear: koppeling weg');
+linearStatus = 401; const bad = get({ key: K, action: 'linear' });
+assert(bad.error && /Linear/.test(get({ key: K }).linear.error) && row('Feedback', 'linear een')[FC.indexOf('linear')] === 'PK-21', 'Linear-fout: melding in het dashboard, koppelingen blijven staan');
+linearStatus = 200; get({ key: K, action: 'linear' }); assert(!get({ key: K }).linear.error, 'daarna weer goed: fout weg');
+ctx.setup(); assert(props.LINEAR_KEY === 'lin_api_GEHEIM123' && /opgeslagen/.test(sheets.Instellingen.rows[10][1]), 'setup opnieuw: sleutel blijft bewaard');
+assert(sheets.Feedback.rows[0][11] === 'Linear' && sheets.Feedback.rows[0][12] === 'Linear-status', 'setup: kolomkoppen Linear en Linear-status');
+assert(get({ key: K }).script === 's7' && get({ key: K }).api === 4, 'scriptversie s7, API 4');
 console.log(fails ? fails + ' FOUT' : 'ALLES OK'); process.exit(fails ? 1 : 0);
