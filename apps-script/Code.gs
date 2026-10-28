@@ -334,7 +334,7 @@ function meldingenOpschonen() {
 
 /* ---------- Linear-koppeling (s7, BL-5) ----------
    Claude maakt de Linear-issues uit "Kopieer voor Claude" en zet per melding in de beschrijving een regel
-   "Dashboard: <ID>" (of, voor kopieën van vóór d6: "Dashboard: <tester-ID> @ <dd-mm-jjjj, uu:mm:ss>").
+   "Dashboard: <ID>" (of, voor kopieën van vóór d6: "Dashboard: <tester-ID of naam> @ <dd-mm-jjjj, uu:mm:ss>").
    Dit script zoekt die regels op (elke 10 min via de trigger, bij het openen van het dashboard als het >2 min geleden is,
    en met de knop in het dashboard) en schrijft per melding het issue (PK-21) en de Linear-status in de Sheet.
    Status volgt Linear: afgerond (Klaar) → opgelost, geannuleerd (Niet doen) → niet doen, Triage → nieuw, al het andere → gepland.
@@ -382,8 +382,9 @@ function linearKoppelen() {
       const lines = String(iss.description || '').match(/Dashboard:[^\n]*/g) || [];
       for (const line of lines) {
         const rest = line.replace(/^Dashboard:\s*/, '').replace(/[`*_]/g, '');
-        const tre = /([A-Z0-9]{1,8}-[A-Z0-9]{4})\s*@\s*(\d{1,2})-(\d{1,2})-(\d{4}),?\s+(\d{1,2}):(\d{2}):(\d{2})/g; let m;
-        while ((m = tre.exec(rest))) put(byTime, m[1] + '|' + timeKey_(m[2], m[3], m[4], m[5], m[6], m[7]), iss);
+        // "<tester-ID of naam> @ <tijd>": oude kopieën zonder ID; heel oude meldingen (13 okt) hebben geen tester-ID, dan de naam
+        const tre = /([^,;@]+?)\s*@\s*(\d{1,2})-(\d{1,2})-(\d{4}),?\s+(\d{1,2}):(\d{2}):(\d{2})/g; let m;
+        while ((m = tre.exec(rest))) put(byTime, m[1].trim().toLowerCase() + '|' + timeKey_(m[2], m[3], m[4], m[5], m[6], m[7]), iss);
         rest.replace(tre, ' ').split(/[\s,;]+/).filter(x => /^[a-z][a-z0-9]{7}$/.test(x)).forEach(x => put(byId, x, iss));
       }
     }
@@ -396,8 +397,9 @@ function linearKoppelen() {
       vals.forEach((r, k) => {
         if (leeg_(r)) return;
         const at = r[ci('at')] instanceof Date ? r[ci('at')] : new Date(r[ci('at')]);
-        const tk = isNaN(at) ? '' : String(r[ci('tid')]) + '|' + Utilities.formatDate(at, TZ, 'yyyy-M-d H:m:s');
-        const iss = byId[String(r[0])] || byTime[tk];
+        const tk = isNaN(at) ? '' : Utilities.formatDate(at, TZ, 'yyyy-M-d H:m:s');
+        const who = [r[ci('tid')], r[ci('name')]].map(x => String(x || '').trim().toLowerCase()).filter(Boolean);
+        const iss = byId[String(r[0])] || (tk && who.map(w => byTime[w + '|' + tk]).find(Boolean));
         const want = iss ? [iss.identifier, iss.state.name] : ['', ''];
         if (iss) linked++;
         if (String(out[k][0] || '') !== want[0] || String(out[k][1] || '') !== want[1]) { out[k] = want; changed++; }
